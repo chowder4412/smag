@@ -1,0 +1,29 @@
+appId: com.smag.mobile
+---
+# Flow: Login with valid credentials → lands on Home screen
+- launchApp:
+    clearState: true
+
+# Wait for splash to finish
+- waitForAnimationToEnd
+
+# Should land on login screen
+- assertVisible: "Experience"
+- assertVisible: "Continue with Email"
+
+# Enter credentials
+- tapOn:
+    id: "login-email-input"
+- inputText: "chef@smag.com"
+
+- tapOn:
+    id: "login-password-input"
+- inputText: "password123"
+
+- tapOn: "Continue with Email"
+
+# Wait for home screen
+- waitForAnimationToEnd
+- assertVisible: "Today's Curations"
+- assertVisible: "Quick Access"
+- assertVisible: "Other Kitchens"

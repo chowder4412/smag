@@ -1,0 +1,50 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isImageUploadWithinLimit(maxMb) {
+      return request.resource.size < maxMb * 1024 * 1024
+        && (
+          request.resource.contentType == null
+          || request.resource.contentType.matches('image/.*')
+        );
+    }
+
+    function hasAdminProfile() {
+      return isSignedIn() &&
+        firestore.exists(/databases/(default)/documents/admin_users/$(request.auth.uid));
+    }
+
+    function adminRoleName() {
+      return hasAdminProfile()
+        ? firestore.get(/databases/(default)/documents/admin_users/$(request.auth.uid)).data.roleName
+        : "";
+    }
+
+    function canManageCatalog() {
+      return adminRoleName() is string
+        && (adminRoleName().matches('(?i)^owner$') || adminRoleName().matches('(?i)^manager$'));
+    }
+
+    match /users/{uid}/profile/{fileName} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /category-images/{fileName} {
+      allow read: if true;
+      allow write: if canManageCatalog() && isImageUploadWithinLimit(15);
+    }
+
+    match /food-images/{fileName} {
+      allow read: if true;
+      allow write: if canManageCatalog() && isImageUploadWithinLimit(15);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

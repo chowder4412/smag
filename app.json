@@ -1,0 +1,105 @@
+{
+  "expo": {
+    "name": "Smag Mobile",
+    "slug": "smag-mobile",
+    "scheme": "smag",
+    "version": "1.1.0",
+    "icon": "./assets/smag_logo.png",
+    "splash": {
+      "image": "./assets/smag_logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fff4f0"
+    },
+    "intentFilters": [
+      {
+        "action": "VIEW",
+        "autoVerify": true,
+        "data": [
+          { "scheme": "https", "host": "smag.ng", "pathPrefix": "/" },
+          { "scheme": "smag" }
+        ],
+        "category": ["BROWSABLE", "DEFAULT"]
+      }
+    ],
+    "ios": {
+      "icon": "./assets/smag_logo.png",
+      "bundleIdentifier": "com.smag.mobile",
+      "googleServicesFile": "./firebase/GoogleService-Info.plist",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Allow Smag to use your location to show nearby restaurants.",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.96147639067-8gd1vppugrrntor6fdlk5l1hhr30sc13"
+            ]
+          }
+        ]
+      }
+    },
+    "android": {
+      "icon": "./assets/smag_logo.png",
+      "package": "com.smag.mobile",
+      "googleServicesFile": "./firebase/google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/smag_logo.png",
+        "backgroundColor": "#fff4f0"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "newArchEnabled": true,
+    "experiments": {
+      "typedRoutes": true
+    },
+    "plugins": [
+      "expo-web-browser",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Allow Smag to use Face ID for secure sign-in."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/smag_logo.png",
+          "color": "#FF5C00",
+          "sounds": []
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Smag to access your photos so you can set your profile picture.",
+          "cameraPermission": "Allow Smag to access your camera so you can take a profile picture."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow Smag to use your location to show nearby restaurants.",
+          "locationWhenInUsePermission": "Allow Smag to use your location to show nearby restaurants."
+        }
+      ],
+      [
+        "react-native-maps",
+        {
+          "googleMapsApiKey": "$(GOOGLE_MAPS_API_KEY)"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "5fd47950-a064-49b7-b378-1dfed20d9aec"
+      }
+    }
+  }
+}

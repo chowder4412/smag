@@ -1,0 +1,518 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function authEmail() {
+      return isSignedIn() && request.auth.token.email is string
+        ? request.auth.token.email
+        : "";
+    }
+
+    function hasAdminProfile() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
+    }
+
+    function adminRoleName() {
+      return hasAdminProfile()
+        ? get(/databases/$(database)/documents/admin_users/$(request.auth.uid)).data.roleName
+        : "";
+    }
+
+    function roleNameRank(roleName) {
+      return roleName is string && roleName.matches('(?i)^(admin|owner)$')
+        ? 2
+        : roleName is string && roleName.matches('(?i)^(sub-admin|subadmin|manager)$')
+          ? 1
+          : 0;
+    }
+
+    function adminRank() {
+      return roleNameRank(adminRoleName());
+    }
+
+    function isAdmin() {
+      return hasAdminProfile() && adminRank() >= 2;
+    }
+
+    function isAdminOrSubAdmin() {
+      return hasAdminProfile() && adminRank() >= 1;
+    }
+
+    function roleRank(data) {
+      return data.rank is int
+        ? data.rank
+        : roleNameRank(data.name);
+    }
+
+    function isKitchenOwner() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/kitchen_owners/$(request.auth.uid));
+    }
+
+    function ownsRestaurant(restaurantId) {
+      return restaurantId is string
+        && exists(/databases/$(database)/documents/external_restaurants/$(restaurantId))
+        && get(/databases/$(database)/documents/external_restaurants/$(restaurantId)).data.ownerUid == request.auth.uid;
+    }
+
+    function hasEmployeeProfile() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/employees/$(request.auth.uid));
+    }
+
+    function employeeProfile() {
+      return hasEmployeeProfile()
+        ? get(/databases/$(database)/documents/employees/$(request.auth.uid)).data
+        : null;
+    }
+
+    function employeeRoleId() {
+      return employeeProfile() != null && employeeProfile().roleId is string
+        ? employeeProfile().roleId
+        : "";
+    }
+
+    function employeeRoleName() {
+      return employeeRoleId() != ""
+        && exists(/databases/$(database)/documents/roles/$(employeeRoleId()))
+        ? get(/databases/$(database)/documents/roles/$(employeeRoleId())).data.name
+        : "";
+    }
+
+    function employeePermissions() {
+      return employeeRoleId() != ""
+        && exists(/databases/$(database)/documents/roles/$(employeeRoleId()))
+        && get(/databases/$(database)/documents/roles/$(employeeRoleId())).data.permissions is list
+        ? get(/databases/$(database)/documents/roles/$(employeeRoleId())).data.permissions
+        : [];
+    }
+
+    function hasEmployeePermission(permission) {
+      return employeeProfile() != null
+        && employeeProfile().status == "active"
+        && permission in employeePermissions();
+    }
+
+    function isManagerEmployee() {
+      return hasEmployeePermission("business_team")
+        || (employeeRoleName() is string && employeeRoleName().matches('(?i)manager'));
+    }
+
+    function isKitchenStaffEmployee() {
+      return hasEmployeePermission("business_orders")
+        || (employeeRoleName() is string && employeeRoleName().matches('(?i)^kitchen[ -]?staff$'));
+    }
+
+    function isDriverEmployee() {
+      return hasEmployeePermission("business_driver")
+        || (employeeRoleName() is string && employeeRoleName().matches('(?i)(driver|delivery)'));
+    }
+
+    function isConciergeEmployee() {
+      return hasEmployeePermission("business_support")
+        || (employeeRoleName() is string && employeeRoleName().matches('(?i)(concierge|support)'));
+    }
+
+    function canReadOpsOrders() {
+      return hasAdminProfile()
+        || isManagerEmployee()
+        || isKitchenStaffEmployee()
+        || isConciergeEmployee();
+    }
+
+    function validRolePayload() {
+      return request.resource.data.name is string
+        && request.resource.data.description is string
+        && request.resource.data.permissions is list
+        && (request.resource.data.rank == null || request.resource.data.rank is int)
+        && (request.resource.data.adminScope == null || request.resource.data.adminScope is bool);
+    }
+
+    function validAdminInvitePayload() {
+      return request.resource.data.email is string
+        && request.resource.data.roleName is string
+        && request.resource.data.used is bool
+        && request.resource.data.createdByUid is string
+        && request.resource.data.createdAtIso is string;
+    }
+
+    function validAuditLogPayload() {
+      return request.resource.data.actorUid is string
+        && request.resource.data.actorName is string
+        && request.resource.data.actorEmail is string
+        && request.resource.data.action is string
+        && request.resource.data.targetType is string
+        && request.resource.data.targetId is string
+        && request.resource.data.targetLabel is string
+        && request.resource.data.details is string
+        && request.resource.data.createdAtIso is string;
+    }
+
+    function inviteExists(inviteId) {
+      return exists(/databases/$(database)/documents/admin_invites/$(inviteId));
+    }
+
+    function inviteDoc(inviteId) {
+      return get(/databases/$(database)/documents/admin_invites/$(inviteId)).data;
+    }
+
+    function validEmployeePayload() {
+      return request.resource.data.name is string
+        && request.resource.data.email is string
+        && request.resource.data.phone is string
+        && request.resource.data.roleId is string
+        && request.resource.data.status in ["active", "suspended"];
+    }
+
+    function validCategoryPayload() {
+      return request.resource.data.name is string
+        && request.resource.data.description is string
+        && request.resource.data.imageUrl is string
+        && request.resource.data.isActive is bool;
+    }
+
+    function validFoodPayload() {
+      return request.resource.data.name is string
+        && request.resource.data.description is string
+        && request.resource.data.categoryId is string
+        && request.resource.data.price is number
+        && request.resource.data.stock is number
+        && request.resource.data.imageUrl is string
+        && request.resource.data.status in ["active", "hidden"];
+    }
+
+    match /admin_users/{uid} {
+      allow create: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.email == authEmail()
+        && request.resource.data.name is string
+        && request.resource.data.roleName is string
+        && roleNameRank(request.resource.data.roleName) >= 1
+        && request.resource.data.inviteId is string
+        && inviteExists(request.resource.data.inviteId)
+        && inviteDoc(request.resource.data.inviteId).used == false
+        && inviteDoc(request.resource.data.inviteId).email == authEmail()
+        && inviteDoc(request.resource.data.inviteId).roleName == request.resource.data.roleName;
+
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+
+      allow update: if isSignedIn() && (
+        (
+          isAdmin()
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.inviteId == resource.data.inviteId
+          && roleNameRank(request.resource.data.roleName) >= 1
+          && roleNameRank(request.resource.data.roleName) <= adminRank()
+        )
+        || (
+          request.auth.uid == uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.roleName == resource.data.roleName
+          && request.resource.data.inviteId == resource.data.inviteId
+        )
+      );
+
+      allow delete: if isAdmin() && roleNameRank(resource.data.roleName) < adminRank();
+    }
+
+    match /admin_invites/{inviteId} {
+      allow read: if hasAdminProfile() && (
+        isAdmin()
+        || (resource.data.email is string && resource.data.email == authEmail())
+      );
+
+      allow create: if isAdmin()
+        && validAdminInvitePayload()
+        && roleNameRank(request.resource.data.roleName) >= 1
+        && roleNameRank(request.resource.data.roleName) <= adminRank();
+
+      allow update: if isSignedIn() && (
+        (
+          isAdmin()
+          && request.resource.data.email is string
+          && request.resource.data.roleName is string
+          && request.resource.data.used is bool
+          && request.resource.data.createdByUid == resource.data.createdByUid
+          && request.resource.data.createdAtIso == resource.data.createdAtIso
+        )
+        || (
+          request.auth.uid != null
+          && resource.data.email == authEmail()
+          && resource.data.used == false
+          && request.resource.data.used == true
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.roleName == resource.data.roleName
+          && request.resource.data.createdByUid == resource.data.createdByUid
+          && request.resource.data.createdAtIso == resource.data.createdAtIso
+          && request.resource.data.usedByUid == request.auth.uid
+          && request.resource.data.usedByEmail == authEmail()
+          && request.resource.data.usedAtIso is string
+        )
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /roles/{roleId} {
+      allow read: if isSignedIn();
+      allow create: if isAdminOrSubAdmin()
+        && validRolePayload()
+        && (
+          roleRank(request.resource.data) < adminRank()
+          || (
+            isAdmin()
+            && request.resource.data.name is string
+            && request.resource.data.name.matches('(?i)^admin$')
+            && roleRank(request.resource.data) == adminRank()
+          )
+        );
+      allow update: if isAdminOrSubAdmin()
+        && validRolePayload()
+        && roleRank(resource.data) < adminRank()
+        && roleRank(request.resource.data) < adminRank();
+      allow delete: if isAdminOrSubAdmin() && roleRank(resource.data) < adminRank();
+    }
+
+    match /employees/{employeeId} {
+      allow read: if hasAdminProfile()
+        || isManagerEmployee()
+        || (isSignedIn() && (request.auth.uid == employeeId || resource.data.uid == request.auth.uid));
+      allow create, delete: if isAdminOrSubAdmin() && validEmployeePayload();
+      allow update: if (
+          isAdminOrSubAdmin()
+          && validEmployeePayload()
+        )
+        || (
+          isSignedIn()
+          && resource.data.uid == request.auth.uid
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.name == resource.data.name
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.phone == resource.data.phone
+          && request.resource.data.roleId == resource.data.roleId
+          && request.resource.data.status == resource.data.status
+        );
+    }
+
+    match /categories/{categoryId} {
+      allow read: if hasAdminProfile();
+      allow create, update, delete: if isAdminOrSubAdmin() && validCategoryPayload();
+    }
+
+    match /foods/{foodId} {
+      allow read: if hasAdminProfile();
+      allow create, update, delete: if isAdminOrSubAdmin() && validFoodPayload();
+    }
+
+    match /admin_audit_logs/{logId} {
+      allow read: if hasAdminProfile();
+      allow create: if hasAdminProfile()
+        && request.resource.data.actorUid == request.auth.uid
+        && request.resource.data.actorEmail == authEmail()
+        && validAuditLogPayload();
+      allow update, delete: if false;
+    }
+
+    match /menu_items/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /promotions/{promoId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /carts/{cartItemId} {
+      allow read, delete, update: if isSignedIn()
+        && request.auth.uid == resource.data.userId;
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.userId;
+    }
+
+    match /orders/{orderId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.userId
+        || canReadOpsOrders()
+        || (resource.data.assignedDriverUid is string && resource.data.assignedDriverUid == request.auth.uid)
+        || (isDriverEmployee() && resource.data.assignedDriverUid == null && resource.data.status == "on_delivery")
+        || (resource.data.restaurantId is string && ownsRestaurant(resource.data.restaurantId))
+      );
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.userId
+        && request.resource.data.status in ["confirmed", "pending_payment"];
+      allow update: if isSignedIn()
+        && request.auth.uid == resource.data.userId
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.paymentStatus == resource.data.paymentStatus
+        && request.resource.data.paymentReference == resource.data.paymentReference;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+
+    match /app_config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update: if isSignedIn()
+        && request.auth.uid == resource.data.userId;
+      allow create: if false;
+    }
+
+    match /users/{uid} {
+      allow read, write: if isSignedIn() && request.auth.uid == uid;
+    }
+
+    match /addresses/{addressId} {
+      allow read, delete, update: if isSignedIn()
+        && request.auth.uid == resource.data.userId;
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.userId;
+    }
+
+    match /points_history/{entryId} {
+      allow read: if isSignedIn()
+        && request.auth.uid == resource.data.userId;
+      allow write: if false;
+    }
+
+    match /external_restaurants/{restaurantId} {
+      allow read: if isSignedIn();
+      allow create, delete: if hasAdminProfile();
+      allow update: if hasAdminProfile()
+        || (
+          isKitchenOwner()
+          && ownsRestaurant(restaurantId)
+          && request.resource.data.ownerUid == resource.data.ownerUid
+        );
+    }
+
+    match /external_menu_items/{itemId} {
+      allow read: if isSignedIn();
+      allow create: if hasAdminProfile()
+        || (
+          isKitchenOwner()
+          && request.resource.data.restaurantId is string
+          && ownsRestaurant(request.resource.data.restaurantId)
+        );
+      allow update: if hasAdminProfile()
+        || (
+          isKitchenOwner()
+          && resource.data.restaurantId == request.resource.data.restaurantId
+          && ownsRestaurant(resource.data.restaurantId)
+        );
+      allow delete: if hasAdminProfile()
+        || (
+          isKitchenOwner()
+          && ownsRestaurant(resource.data.restaurantId)
+        );
+    }
+
+    match /promo_codes/{promoId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /kitchen_applications/{appId} {
+      allow create: if request.auth != null
+        && request.resource.data.email is string
+        && request.resource.data.businessName is string
+        && request.resource.data.status == "pending";
+      allow read: if hasAdminProfile();
+      allow update, delete: if false;
+    }
+
+    match /kitchen_owners/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || hasAdminProfile());
+      allow update: if isSignedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.restaurantId == resource.data.restaurantId
+        && request.resource.data.restaurantName == resource.data.restaurantName
+        && request.resource.data.role == resource.data.role;
+      allow create, delete: if false;
+    }
+
+    match /mail/{docId} {
+      allow read, write: if false;
+    }
+
+    match /broadcast_notifications/{docId} {
+      allow read: if hasAdminProfile();
+      allow write: if false;
+    }
+
+    match /app_broadcasts/{docId} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /vip_chat_sessions/{sessionId} {
+      allow read, create: if isSignedIn();
+      allow update: if isSignedIn();
+    }
+
+    match /vip_chat_sessions/{sessionId}/messages/{msgId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn()
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0;
+    }
+
+    match /order_reviews/{reviewId} {
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.foodRating is number
+        && request.resource.data.driverRating is number;
+      allow read: if hasAdminProfile();
+      allow update, delete: if false;
+    }
+
+    match /driver_applications/{appId} {
+      allow create: if request.resource.data.email is string
+        && request.resource.data.name is string
+        && request.resource.data.status == "pending";
+      allow read: if hasAdminProfile();
+      allow update, delete: if false;
+    }
+
+    match /favorites/{favId} {
+      allow read, delete: if isSignedIn()
+        && request.auth.uid == resource.data.userId;
+      allow create: if isSignedIn()
+        && request.auth.uid == request.resource.data.userId
+        && favId == request.auth.uid + "_" + request.resource.data.menuItemId;
+    }
+
+    match /referrals/{referralId} {
+      allow read: if isSignedIn()
+        && request.auth.uid == resource.data.referrerId;
+      allow write: if false;
+    }
+
+    match /vouchers/{voucherId} {
+      allow read: if isSignedIn()
+        && request.auth.uid == resource.data.userId;
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

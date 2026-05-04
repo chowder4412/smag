@@ -1,0 +1,19 @@
+appId: com.smag.mobile
+---
+# Flow: Order history → track active order
+- launchApp
+
+# Navigate to order history
+- tapOn: "Orders"
+- waitForAnimationToEnd
+- assertVisible: "Order History"
+
+# If there are active orders, tap Track
+- runFlow:
+    when:
+      visible: "Track"
+    flow:
+      - tapOn: "Track"
+      - waitForAnimationToEnd
+      - assertVisible: "Track Order"
+      - assertVisible: "Delivery Status"

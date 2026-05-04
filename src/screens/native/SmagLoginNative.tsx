@@ -1,0 +1,364 @@
+import * as AppleAuthentication from "expo-apple-authentication";
+import * as Crypto from "expo-crypto";
+import { MaterialIcons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+
+import {
+  firebaseSignIn,
+  firebaseSignInWithApple,
+  firebaseSignInWithGoogleNative,
+  getCurrentUser,
+  getFirebaseAuthErrorMessage
+} from "@/lib/firebase/auth";
+import { clearOnboardingPending } from "@/lib/startupState";
+import { validateEmail, validatePassword } from "@/lib/validation";
+import {
+  authenticateWithBiometrics,
+  getBiometricEmail,
+  isBiometricAvailable,
+  isBiometricEnabled,
+  saveBiometricCredential
+} from "@/lib/biometrics";
+import { haptics } from "@/lib/haptics";
+import { AppImage } from "@/components/AppImage";
+
+const heroImage =
+  "https://lh3.googleusercontent.com/aida-public/AB6AXuBUkCnpyWiuQ0602VgaZgKndwqJk_xyPvE5ReuWUqTtgJLkw5lDEwuVmXk6cB9cNP5p07RdK9SuYdwoAX3oTmLO7eBMonbv33szGLIzz8RN4QmND5Fi0suCQeTJw7YJ1rZjSFnvvOXu7Swtt4yPk470HBBMfSOYjMwG1CgfT3BMPg3i6IwMMcTB6aAmDuTti12fQ3RFptsaVYmXtKxN87ARIGhXQ-tcj1YQcDt4A8mzPu7-GuNy0XKBqv3MNsEUs4YwuruAI0woMdck";
+
+const googleLogo =
+  "https://lh3.googleusercontent.com/aida-public/AB6AXuBvEhYOC5W32Izk2zJE57nEEPrYon0NqyVA9WytOw5MuKGafsk3KCW9TZNpPRA2vd_mvx0LCBudj4ed2JUpIRHIJOgHOHLrvPq_kD_9_Dt4WSKoKPMHWfeIlM5hYPQ_djqRpbQ_vnGOcJuZderMGVFkQPdrNSLebfu7r3GMtm0USh4e7a48WKRjmtnkvQm-GOys7Rd-3RE2z0O-7OJ7JR4RtQHIc_RF65D6gOzVrGY74eRdVm1tRwwtkhPrw-gUHaZGX7quQJ1IzIi8";
+
+export function SmagLoginNative() {
+  const router = useRouter() as { push: (href: string) => void; replace: (href: string) => void; back: () => void };
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<"google" | "apple" | "phone" | null>(null);
+  const [failCount, setFailCount] = useState(0);
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const available = await isBiometricAvailable();
+      const enabled = await isBiometricEnabled();
+      setBiometricAvailable(available && enabled);
+      if (available && enabled) {
+        const savedEmail = await getBiometricEmail();
+        if (!savedEmail) return;
+        const success = await authenticateWithBiometrics();
+        if (!success) return;
+        setSocialLoading("phone");
+        try {
+          const user = getCurrentUser();
+          if (user) {
+            await haptics.success();
+            await clearOnboardingPending();
+            router.replace("/smag_home");
+          } else {
+            setEmail(savedEmail);
+            setAuthError("Session expired. Please enter your password.");
+          }
+        } finally {
+          setSocialLoading(null);
+        }
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleEmailSignIn() {
+    const ee = validateEmail(email);
+    const pe = validatePassword(password);
+    setEmailError(ee);
+    setPasswordError(pe);
+    setAuthError(null);
+    if (ee || pe) return;
+
+    if (lockedUntil && Date.now() < lockedUntil) {
+      const secsLeft = Math.ceil((lockedUntil - Date.now()) / 1000);
+      setAuthError(`Too many attempts. Try again in ${secsLeft}s.`);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await firebaseSignIn(email.trim(), password);
+      setFailCount(0);
+      setLockedUntil(null);
+      // Offer to enable biometrics after successful login
+      const available = await isBiometricAvailable();
+      const enabled = await isBiometricEnabled();
+      if (available && !enabled) {
+        await saveBiometricCredential(email.trim());
+      }
+      await haptics.success();
+      await clearOnboardingPending();
+      router.replace("/smag_home");
+    } catch (error) {
+      const newCount = failCount + 1;
+      setFailCount(newCount);
+      if (newCount >= 5) {
+        setLockedUntil(Date.now() + 60000);
+        setAuthError("Too many failed attempts. Please wait 60 seconds before trying again.");
+      } else {
+        setAuthError(getFirebaseAuthErrorMessage(error));
+      }
+      void haptics.error();
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleBiometricSignIn() {
+    const savedEmail = await getBiometricEmail();
+    if (!savedEmail) return;
+    const success = await authenticateWithBiometrics();
+    if (!success) return;
+    setSocialLoading("phone"); // reuse loading state
+    try {
+      // Re-authenticate silently — Firebase session should still be valid
+      // If not, prompt password
+      const user = getCurrentUser();
+      if (user) {
+        await haptics.success();
+        await clearOnboardingPending();
+        router.replace("/smag_home");
+      } else {
+        setEmail(savedEmail);
+        setAuthError("Session expired. Please enter your password.");
+      }
+    } finally {
+      setSocialLoading(null);
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    setSocialLoading("google");
+    setAuthError(null);
+    try {
+      await firebaseSignInWithGoogleNative();
+      await clearOnboardingPending();
+      router.replace("/smag_home");
+    } catch (error) {
+      setAuthError(getFirebaseAuthErrorMessage(error));
+    } finally {
+      setSocialLoading(null);
+    }
+  }
+
+  async function handleAppleSignIn() {
+    if (Platform.OS !== "ios") {
+      Alert.alert("Apple Sign-In", "Apple sign-in is only available on iOS devices.");
+      return;
+    }
+    setSocialLoading("apple");
+    setAuthError(null);
+    try {
+      const rawNonce = Math.random().toString(36).substring(2) + Math.random().toString(36).substring(2);
+      const hashedNonce = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        rawNonce
+      );
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL
+        ],
+        nonce: hashedNonce
+      });
+      if (credential.identityToken) {
+        await firebaseSignInWithApple(credential.identityToken, rawNonce);
+        await clearOnboardingPending();
+        router.replace("/smag_home");
+      }
+    } catch (error: unknown) {
+      const e = error as { code?: string };
+      if (e?.code !== "ERR_REQUEST_CANCELED") {
+        setAuthError(getFirebaseAuthErrorMessage(error));
+      }
+    } finally {
+      setSocialLoading(null);
+    }
+  }
+
+  function handlePhoneSignIn() {
+    router.push("/smag_phone_auth");
+  }
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <View style={styles.heroWrap}>
+          <AppImage source={{ uri: heroImage }} style={styles.heroImage} />
+          <View style={styles.heroOverlay} />
+          <Image source={require("../../../assets/smag_logo.png")} style={styles.logo} resizeMode="contain" />
+        </View>
+
+        <View style={styles.content}>
+          <Text style={styles.title}>
+            Experience{"\n"}
+            <Text style={styles.titleAccent}>Gourmet</Text> Delivered.
+          </Text>
+          <Text style={styles.subtitle}>
+            Join Smag and explore a curated gallery of the city&apos;s finest culinary creations.
+          </Text>
+
+          <Text style={styles.label}>Email Address</Text>
+          <TextInput
+            placeholder="chef@smag.com"
+            placeholderTextColor="#80503299"
+            testID="login-email-input"
+            style={[styles.input, emailError ? styles.inputError : null]}
+            value={email}
+            onChangeText={(t) => { setEmail(t); setEmailError(null); setAuthError(null); }}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+
+          <Text style={[styles.label, { marginTop: 10 }]}>Password</Text>
+          <TextInput
+            placeholder="••••••••"
+            placeholderTextColor="#80503299"
+            testID="login-password-input"
+            style={[styles.input, passwordError ? styles.inputError : null]}
+            value={password}
+            onChangeText={(t) => { setPassword(t); setPasswordError(null); setAuthError(null); }}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+          {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+          {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
+
+          <Pressable style={styles.primaryButton} onPress={handleEmailSignIn} disabled={loading}>
+            <Text style={styles.primaryButtonText}>{loading ? "Signing In..." : "Continue with Email"}</Text>
+          </Pressable>
+
+          <View style={styles.dividerRow}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>OR SIGN IN WITH</Text>
+            <View style={styles.divider} />
+          </View>
+
+          {/* Google */}
+          <Pressable
+            style={[styles.socialBtn, socialLoading !== null ? { opacity: 0.6 } : {}]}
+            onPress={handleGoogleSignIn}
+            disabled={socialLoading !== null}
+          >
+            {socialLoading === "google"
+              ? <ActivityIndicator size="small" color="#4b240a" />
+              : <AppImage source={{ uri: googleLogo }} style={styles.googleIcon} />}
+            <Text style={styles.socialText}>
+              {socialLoading === "google" ? "Signing in..." : "Continue with Google"}
+            </Text>
+          </Pressable>
+
+          {/* Apple — only shown on iOS */}
+          {Platform.OS === "ios" ? (
+            <Pressable
+              style={[styles.socialBtn, styles.appleBtn, socialLoading !== null ? { opacity: 0.6 } : {}]}
+              onPress={handleAppleSignIn}
+              disabled={socialLoading !== null}
+            >
+              {socialLoading === "apple"
+                ? <ActivityIndicator size="small" color="#ffffff" />
+                : <MaterialIcons name="apple" size={20} color="#ffffff" />}
+              <Text style={[styles.socialText, { color: "#ffffff" }]}>
+                {socialLoading === "apple" ? "Signing in..." : "Continue with Apple"}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {/* Phone */}
+          <Pressable style={styles.socialBtn} onPress={handlePhoneSignIn} disabled={socialLoading !== null}>
+            <MaterialIcons name="phone" size={20} color="#a33800" />
+            <Text style={styles.socialText}>Continue with Phone</Text>
+          </Pressable>
+
+          <Pressable onPress={() => router.push("/smag_forgot_password")}>
+            <Text style={styles.forgotLink}>Forgot password?</Text>
+          </Pressable>
+
+          {biometricAvailable && (
+            <Pressable
+              style={styles.biometricBtn}
+              onPress={handleBiometricSignIn}
+              disabled={socialLoading !== null}
+            >
+              <MaterialIcons name="fingerprint" size={28} color="#a33800" />
+              <Text style={styles.biometricText}>Sign in with Biometrics</Text>
+            </Pressable>
+          )}
+
+          <Text style={styles.footerText}>
+            New to the gallery?
+            <Text style={styles.footerLink} onPress={() => router.push("/smag_sign_up")}>
+              {" "}Request Invitation
+            </Text>
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#fff4f0" },
+  scroll: { flexGrow: 1 },
+  heroWrap: { height: 280, position: "relative" },
+  heroImage: { width: "100%", height: "100%" },
+  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(163,56,0,0.18)" },
+  logo: { position: "absolute", top: 22, left: 16, width: 90, height: 44 },
+  content: { flex: 1, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 30 },
+  title: { color: "#4b240a", fontSize: 34, lineHeight: 40, fontWeight: "900" },
+  titleAccent: { color: "#ff5e07", fontStyle: "italic" },
+  subtitle: { color: "#805032", marginTop: 8, marginBottom: 18, fontSize: 15, lineHeight: 22 },
+  label: { color: "#4b240a", fontSize: 14, marginBottom: 8, fontWeight: "700" },
+  input: { backgroundColor: "#ffede5", borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: "#4b240a" },
+  inputError: { borderWidth: 1.5, borderColor: "#b31b25" },
+  errorText: { color: "#b31b25", fontSize: 12, marginTop: 4, marginLeft: 4 },
+  primaryButton: { marginTop: 14, backgroundColor: "#a33800", borderRadius: 999, paddingVertical: 16, alignItems: "center" },
+  primaryButtonText: { color: "#ffefeb", fontWeight: "800", fontSize: 16 },
+  dividerRow: { marginTop: 20, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10 },
+  divider: { flex: 1, height: 1, backgroundColor: "rgba(221,159,124,0.35)" },
+  dividerText: { color: "#805032", fontSize: 10, fontWeight: "700", letterSpacing: 1 },
+  socialBtn: {
+    marginBottom: 10,
+    backgroundColor: "#ffffff",
+    borderRadius: 14,
+    minHeight: 52,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#ffdbc9"
+  },
+  appleBtn: { backgroundColor: "#000000", borderColor: "#000000" },
+  googleIcon: { width: 18, height: 18 },
+  socialText: { color: "#4b240a", fontWeight: "700", fontSize: 15 },
+  forgotLink: { marginTop: 8, textAlign: "center", color: "#a33800", fontSize: 13, fontWeight: "700" },
+  biometricBtn: {
+    marginTop: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#ffdbc9",
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: "#ffffff"
+  },
+  biometricText: { color: "#a33800", fontWeight: "700", fontSize: 15 },
+  footerText: { marginTop: 14, textAlign: "center", color: "#805032", fontSize: 13 },
+  footerLink: { color: "#a33800", fontWeight: "700" }
+});

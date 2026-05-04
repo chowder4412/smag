@@ -1,0 +1,39 @@
+appId: com.smag.business
+---
+# Flow: Driver login → accept available order → mark delivered
+- launchApp:
+    clearState: true
+
+# Should land on login
+- assertVisible: "Smag Business"
+- assertVisible: "Sign In"
+
+# Sign in as driver
+- tapOn: "Sign In"
+- tapOn:
+    text: "Email"
+    index: 0
+- inputText: "driver@smag.com"
+- tapOn: "Password"
+- inputText: "password123"
+- tapOn: "Sign In"
+
+# Wait for role detection
+- waitForAnimationToEnd
+- assertVisible: "Driver Dashboard"
+
+# Switch to Available tab
+- tapOn: "Available"
+- waitForAnimationToEnd
+
+# Accept first available order if present
+- runFlow:
+    when:
+      visible: "Accept & Start Delivery"
+    flow:
+      - tapOn: "Accept & Start Delivery"
+      - waitForAnimationToEnd
+      # Should switch to My Orders tab
+      - assertVisible: "My Orders"
+      # GPS tracking banner should appear
+      - assertVisible: "Live GPS active"

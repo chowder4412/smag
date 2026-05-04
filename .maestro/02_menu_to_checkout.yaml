@@ -1,0 +1,33 @@
+appId: com.smag.mobile
+---
+# Flow: Browse menu → add item to cart → proceed to checkout
+- launchApp
+
+# Navigate to menu from home
+- tapOn: "Menu"
+- waitForAnimationToEnd
+
+# Wait for menu to load (skeleton disappears)
+- waitForAnimationToEnd
+
+# Tap Add to Cart on first item
+- tapOn:
+    text: "Add to Cart"
+    index: 0
+
+# Should navigate to cart
+- waitForAnimationToEnd
+- assertVisible: "My Cart"
+- assertVisible: "Proceed to Checkout"
+
+# Verify totals are shown
+- assertVisible: "Subtotal"
+- assertVisible: "Delivery Fee"
+- assertVisible: "Total"
+
+# Proceed to checkout
+- tapOn: "Proceed to Checkout"
+- waitForAnimationToEnd
+- assertVisible: "Checkout"
+- assertVisible: "Delivery Address"
+- assertVisible: "Payment Method"
