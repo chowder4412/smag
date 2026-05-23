@@ -82,12 +82,12 @@ describe("getBiometricEmail", () => {
 
 describe("authenticateWithBiometrics", () => {
   it("returns true on successful authentication", async () => {
-    mockLocalAuth.authenticateAsync.mockResolvedValue({ success: true, error: undefined as never });
+    mockLocalAuth.authenticateAsync.mockResolvedValue({ success: true } as never);
     expect(await authenticateWithBiometrics()).toBe(true);
   });
 
   it("returns false on failed authentication", async () => {
-    mockLocalAuth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" as never });
+    mockLocalAuth.authenticateAsync.mockResolvedValue({ success: false, error: "user_cancel" } as never);
     expect(await authenticateWithBiometrics()).toBe(false);
   });
 });

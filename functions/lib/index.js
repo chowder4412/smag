@@ -944,7 +944,7 @@ exports.rejectKitchenApplication = (0, https_1.onCall)(async (request) => {
 });
 // ─── Update Order Status (Admin/Driver) ───────────────────────────────────────
 exports.updateOrderStatus = (0, https_1.onCall)(async (request) => {
-    var _a, _b;
+    var _a, _b, _c;
     if (!((_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid))
         throw new https_1.HttpsError("unauthenticated", "Must be signed in.");
     const { orderId, status, driverUid, driverName, driverVehicle, driverAvatarUrl } = request.data;
@@ -1012,6 +1012,37 @@ exports.updateOrderStatus = (0, https_1.onCall)(async (request) => {
         orderId,
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     });
+    // ── Push notifications to business users ──────────────────────────────────
+    const expoPushTokens = [];
+    // New confirmed order → notify kitchen staff + kitchen owner
+    if (status === "confirmed") {
+        const [staffSnap, ownerSnap] = await Promise.all([
+            db.collection("employees").where("status", "==", "active").get(),
+            orderData.restaurantId
+                ? db.collection("kitchen_owners").where("restaurantId", "==", orderData.restaurantId).limit(1).get()
+                : Promise.resolve(null)
+        ]);
+        staffSnap.docs.forEach(d => { if (d.data().pushToken)
+            expoPushTokens.push(d.data().pushToken); });
+        ownerSnap === null || ownerSnap === void 0 ? void 0 : ownerSnap.docs.forEach(d => { if (d.data().pushToken)
+            expoPushTokens.push(d.data().pushToken); });
+    }
+    // Order ready for pickup (on_delivery, unassigned) → notify all active drivers
+    if (status === "on_delivery" && (!orderData.assignedDriverUid || orderData.assignedDriverUid === "")) {
+        const driverRoleSnap = await db.collection("roles").where("name", "==", "Driver").limit(1).get();
+        if (!driverRoleSnap.empty) {
+            const driverEmpSnap = await db.collection("employees")
+                .where("roleId", "==", driverRoleSnap.docs[0].id)
+                .where("status", "==", "active").get();
+            driverEmpSnap.docs.forEach(d => { if (d.data().pushToken)
+                expoPushTokens.push(d.data().pushToken); });
+        }
+    }
+    if (expoPushTokens.length > 0) {
+        const pushTitle = status === "confirmed" ? "New Order! 🛎" : "Order Ready for Pickup 🚀";
+        const pushBody = `Order #${orderId.slice(-6).toUpperCase()} · ${(_c = statusMessages[status]) !== null && _c !== void 0 ? _c : status}`;
+        await axios_1.default.post("https://exp.host/--/api/v2/push/send", expoPushTokens.map(token => ({ to: token, title: pushTitle, body: pushBody, data: { orderId }, sound: "default" })), { headers: { "Content-Type": "application/json", Accept: "application/json" } }).catch(() => { });
+    }
     return { ok: true };
 });
 // ─── Update Driver Location ───────────────────────────────────────────────────

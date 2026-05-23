@@ -1,0 +1,23 @@
+{
+  "firestore-send-email": {
+    "source": "firebase/firestore-send-email",
+    "version": "0.2.9",
+    "params": {
+      "DATABASE": "(default)",
+      "DATABASE_REGION": "nam5",
+      "AUTH_TYPE": "UsernamePassword",
+      "SMTP_CONNECTION_URI": "smtps://mustealawal@gmail.com@smtp.gmail.com:465",
+      "SMTP_PASSWORD": "projects/smag-12fe9/secrets/ext-firestore-send-email-SMTP_PASSWORD/versions/latest",
+      "MAIL_COLLECTION": "mail",
+      "DEFAULT_FROM": "mustealawal@gmail.com",
+      "DEFAULT_REPLY_TO": "mustealawal@gmail.com",
+      "USERS_COLLECTION": "users",
+      "TTL_EXPIRE_TYPE": "month",
+      "TTL_EXPIRE_VALUE": "1"
+    },
+    "systemParams": {
+      "firebaseextensions.v1beta.function/location": "us-central1",
+      "firebaseextensions.v1beta.v2function/memory": "256Mi"
+    }
+  }
+}

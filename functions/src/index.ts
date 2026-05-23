@@ -1271,6 +1271,42 @@ export const updateOrderStatus = onCall(async (request) => {
     createdAt: admin.firestore.FieldValue.serverTimestamp()
   });
 
+  // ── Push notifications to business users ──────────────────────────────────
+  const expoPushTokens: string[] = [];
+
+  // New confirmed order → notify kitchen staff + kitchen owner
+  if (status === "confirmed") {
+    const [staffSnap, ownerSnap] = await Promise.all([
+      db.collection("employees").where("status", "==", "active").get(),
+      orderData.restaurantId
+        ? db.collection("kitchen_owners").where("restaurantId", "==", orderData.restaurantId).limit(1).get()
+        : Promise.resolve(null)
+    ]);
+    staffSnap.docs.forEach(d => { if (d.data().pushToken) expoPushTokens.push(d.data().pushToken as string); });
+    ownerSnap?.docs.forEach(d => { if (d.data().pushToken) expoPushTokens.push(d.data().pushToken as string); });
+  }
+
+  // Order ready for pickup (on_delivery, unassigned) → notify all active drivers
+  if (status === "on_delivery" && (!orderData.assignedDriverUid || orderData.assignedDriverUid === "")) {
+    const driverRoleSnap = await db.collection("roles").where("name", "==", "Driver").limit(1).get();
+    if (!driverRoleSnap.empty) {
+      const driverEmpSnap = await db.collection("employees")
+        .where("roleId", "==", driverRoleSnap.docs[0].id)
+        .where("status", "==", "active").get();
+      driverEmpSnap.docs.forEach(d => { if (d.data().pushToken) expoPushTokens.push(d.data().pushToken as string); });
+    }
+  }
+
+  if (expoPushTokens.length > 0) {
+    const pushTitle = status === "confirmed" ? "New Order! 🛎" : "Order Ready for Pickup 🚀";
+    const pushBody = `Order #${orderId.slice(-6).toUpperCase()} · ${statusMessages[status] ?? status}`;
+    await axios.post(
+      "https://exp.host/--/api/v2/push/send",
+      expoPushTokens.map(token => ({ to: token, title: pushTitle, body: pushBody, data: { orderId }, sound: "default" })),
+      { headers: { "Content-Type": "application/json", Accept: "application/json" } }
+    ).catch(() => { /* non-fatal — push delivery is best-effort */ });
+  }
+
   return { ok: true };
 });
 

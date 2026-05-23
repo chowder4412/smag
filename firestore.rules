@@ -342,7 +342,10 @@ service cloud.firestore {
         request.auth.uid == resource.data.userId
         || canReadOpsOrders()
         || (resource.data.assignedDriverUid is string && resource.data.assignedDriverUid == request.auth.uid)
-        || (isDriverEmployee() && resource.data.assignedDriverUid == null && resource.data.status == "on_delivery")
+        || (isDriverEmployee() && (
+          resource.data.assignedDriverUid == null
+          || (resource.data.assignedDriverUid is string && resource.data.assignedDriverUid == "")
+        ) && resource.data.status == "on_delivery")
         || (resource.data.restaurantId is string && ownsRestaurant(resource.data.restaurantId))
       );
       allow create: if isSignedIn()
@@ -375,6 +378,11 @@ service cloud.firestore {
 
     match /users/{uid} {
       allow read, write: if isSignedIn() && request.auth.uid == uid;
+      allow read: if hasAdminProfile();
+    }
+
+    match /user_support_notes/{noteId} {
+      allow read, write: if hasAdminProfile();
     }
 
     match /addresses/{addressId} {

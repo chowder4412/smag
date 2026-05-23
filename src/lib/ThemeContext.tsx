@@ -3,14 +3,27 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 
 type Theme = "light" | "dark";
 
+type ColorScheme = {
+  background: string;
+  surface: string;
+  surfaceLow: string;
+  onBackground: string;
+  onSurface: string;
+  onSurfaceVariant: string;
+  primary: string;
+  onPrimary: string;
+  outline: string;
+  error: string;
+};
+
 type ThemeContextValue = {
   theme: Theme;
   isDark: boolean;
   toggleTheme: () => void;
-  colors: typeof LIGHT_COLORS;
+  colors: ColorScheme;
 };
 
-const LIGHT_COLORS = {
+const LIGHT_COLORS: ColorScheme = {
   background: "#fff4f0",
   surface: "#ffffff",
   surfaceLow: "#ffede5",
@@ -23,7 +36,7 @@ const LIGHT_COLORS = {
   error: "#b31b25"
 } as const;
 
-const DARK_COLORS = {
+const DARK_COLORS: ColorScheme = {
   background: "#1a0d06",
   surface: "#2a1508",
   surfaceLow: "#3a1e0a",

@@ -6,7 +6,7 @@ function lazyScreen<T extends ComponentType>(
   importer: () => Promise<{ default: T }>
 ): ComponentType {
   const Lazy = lazy(importer);
-  return withScreenErrorBoundary(Lazy as ComponentType);
+  return withScreenErrorBoundary(Lazy as unknown as ComponentType);
 }
 
 const nativeScreens: Record<string, ComponentType> = {

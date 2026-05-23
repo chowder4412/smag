@@ -90,8 +90,9 @@ function AuthGuard({ onReady }: { onReady: () => void }) {
 
   useEffect(() => {
     if (!authReady) return;
-    const currentScreen = segments[segments.length - 1] ?? "";
-    const isPublic = PUBLIC_SCREENS.has(currentScreen) || currentScreen === "index" || currentScreen === "";
+    const lastSegment = segments[segments.length - 1] ?? "";
+    // Public if in PUBLIC_SCREENS set or is the dynamic [id] route (screens handle their own auth)
+    const isPublic = PUBLIC_SCREENS.has(lastSegment) || lastSegment === "[id]";
     if (!isAuthenticatedRef.current && !isPublic) {
       router.replace("/smag_login");
     }

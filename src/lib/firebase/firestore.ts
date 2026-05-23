@@ -49,7 +49,7 @@ export type CartItem = {
   restaurantName: string;
 };
 
-export type OrderStatus = "confirmed" | "preparing" | "on_delivery" | "delivered" | "cancelled";
+export type OrderStatus = "pending_payment" | "confirmed" | "preparing" | "on_delivery" | "delivered" | "cancelled";
 
 export type OrderItem = {
   menuItemId: string;

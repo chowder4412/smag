@@ -20,9 +20,9 @@ jest.mock("firebase/firestore", () => ({
   query: jest.fn(),
   where: jest.fn(),
   limit: jest.fn(),
-  getDocs: (...args: unknown[]) => mockGetDocs(...args),
-  updateDoc: (...args: unknown[]) => mockUpdateDoc(...args),
-  doc: (...args: unknown[]) => mockDoc(...args),
+  getDocs: (arg: unknown) => mockGetDocs(arg),
+  updateDoc: (arg1: unknown, arg2: unknown) => mockUpdateDoc(arg1, arg2),
+  doc: (...args: unknown[]) => (mockDoc as (...a: unknown[]) => string)(...args),
   increment: (n: number) => mockIncrement(n),
   // unused but imported by firestore.ts
   addDoc: jest.fn(),
