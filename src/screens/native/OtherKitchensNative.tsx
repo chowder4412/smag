@@ -93,7 +93,7 @@ export function OtherKitchensNative() {
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Other Kitchens</Text>
           {initialQuery ? (
-            <Text style={styles.locationText}>Results for "{initialQuery}"</Text>
+            <Text style={styles.locationText}>{"Results for \""}{initialQuery}{"\""}</Text>
           ) : location.coords ? (
             <Text style={styles.locationText}>
               <MaterialIcons name="location-on" size={11} color="#a33800" /> Showing within {MAX_DISTANCE_KM}km

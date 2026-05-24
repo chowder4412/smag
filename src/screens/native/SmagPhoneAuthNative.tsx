@@ -92,7 +92,7 @@ export function SmagPhoneAuthNative() {
           <>
             <Text style={styles.title}>Enter your phone number</Text>
             <Text style={styles.subtitle}>
-              We'll send a one-time code to verify your number.
+              {"We'll send a one-time code to verify your number."}
             </Text>
             <TextInput
               style={[styles.input, error ? styles.inputError : null]}

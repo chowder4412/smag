@@ -143,7 +143,7 @@ export function SmagRateYourExperienceNative() {
             <MaterialIcons name="add-a-photo" size={24} color="#a33800" />
           </View>
           <Text style={styles.photoBtnTitle}>Add Photos</Text>
-          <Text style={styles.photoBtnSub}>Show others what they're missing!</Text>
+          <Text style={styles.photoBtnSub}>{"Show others what they're missing!"}</Text>
         </Pressable>
 
         <Pressable

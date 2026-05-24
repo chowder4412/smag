@@ -124,7 +124,7 @@ export function SmagHomeNative() {
 
               {searchResults.length === 0 ? (
                 <View style={styles.searchEmpty}>
-                  <Text style={styles.searchEmptyText}>No Smag dishes match "{searchQuery}"</Text>
+                  <Text style={styles.searchEmptyText}>{"No Smag dishes match \""}{searchQuery}{"\""}</Text>
                 </View>
               ) : (
                 searchResults.map((item) => (
@@ -163,7 +163,7 @@ export function SmagHomeNative() {
                   </View>
                   <View>
                     <Text style={styles.searchOtherKitchensTitle}>Search in Other Kitchens</Text>
-                    <Text style={styles.searchOtherKitchensSub}>Find "{searchQuery}" across nearby restaurants</Text>
+                    <Text style={styles.searchOtherKitchensSub}>{"Find \""}{searchQuery}{"\" across nearby restaurants"}</Text>
                   </View>
                 </View>
                 <MaterialIcons name="arrow-forward" size={18} color="#a33800" />

@@ -131,7 +131,7 @@ export function SmagReferralLeaderboardNative() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.listName}>{item.displayName}</Text>
                       {item.uid === getCurrentUser()?.uid && (
-                        <Text style={[styles.listSub, { color: "#a33800", fontWeight: "700" }]}>That's you!</Text>
+                        <Text style={[styles.listSub, { color: "#a33800", fontWeight: "700" }]}>{"That's you!"}</Text>
                       )}
                     </View>
                     <Text style={[styles.listCount, item.uid === getCurrentUser()?.uid && { color: "#a33800" }]}>
