@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Animated, StyleSheet, View } from "react-native";
+import { Animated, Platform, StyleSheet, View } from "react-native";
 
 export function SkeletonBox({ width, height, borderRadius = 8, style }: {
   width: number | string;
@@ -10,10 +10,11 @@ export function SkeletonBox({ width, height, borderRadius = 8, style }: {
   const opacity = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
+    const useNative = Platform.OS !== "web";
     const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.3, duration: 700, useNativeDriver: true })
+        Animated.timing(opacity, { toValue: 1, duration: 700, useNativeDriver: useNative }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 700, useNativeDriver: useNative })
       ])
     );
     anim.start();

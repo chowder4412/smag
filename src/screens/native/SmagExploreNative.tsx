@@ -1,6 +1,9 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,12 +13,30 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { subscribeMenuItems, type MenuItem } from "@/lib/firebase/firestore";
+import { getCurrentUser } from "@/lib/firebase/auth";
+import { addToCart, subscribeMenuItems, type MenuItem } from "@/lib/firebase/firestore";
 import { AppImage } from "@/components/AppImage";
 import { getUserProfile } from "@/lib/userProfile";
 import { useAppRouter } from "@/lib/useAppRouter";
+import { haptics } from "@/lib/haptics";
+import { enqueueCartMutation } from "@/lib/offlineQueue";
+import { useNetworkStatus } from "@/lib/useNetworkStatus";
+import {
+  SMAG_KITCHEN_CATEGORIES,
+  customGroupsForDish,
+  formatNaira,
+  menuItemIdForDish,
+  type CustomGroup,
+  type MealCategory,
+  type MealDish
+} from "@/lib/smagKitchenMenu";
 
 type ExploreTab = "smag" | "other";
+
+type SelectedDish = {
+  dish: MealDish;
+  category: MealCategory;
+};
 
 const poke =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuB8DPRc_MITuKljSZXM4NsBOjJgRK0t9s7bWD7BYy-kItNdml6iABjHm4L_N4VZ1sk4yA2BT2O3cYVZpM2-YeR5MTKYDbR7KuqgzRwbKrF2RoWQhto3n0t1OSBmJZUVZuPGDt6fSQr24mCA3WgM2-RcdtGHkMMhUlfCZkRVlVx_SD-7Oz0asHPHuIXTTlisuJb9RardMiK7-x26HzDs1sSKWEw6Yru3gvyBGUaYcvdNGH0pq3buvHLpw7_zuLH0aBEoXZGREHB_rAqa";
@@ -26,12 +47,7 @@ const sweet =
 const vegan =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuB3UUjgYAACTjszSsyoirQV6iGT3BmfNg_fyJ408Crr3u9GSxxNbNqDA0X82NhdmggEVaxm8zfBaZz050_AOhrgppkuAp48YCKCooyaOxs2VjJ2-Xq2L8n8R5Q2cQuCd9eDcHFRBnyjY12DNNF9xM2tBaNQ9ZNaTWUPpW7248-66Su7v4UPX5IdT5uSb34_JSYgxalyuIOi0qaWWE-WxB6lUX8UGeHb1PleKzqJw9T-byIhzMUw67wmyHyBjZ65y8q67dnIhbTcgygs";
 
-const categories = [
-  { label: "Pizza", icon: "local-pizza" as const },
-  { label: "Burgers", icon: "lunch-dining" as const },
-  { label: "Sushi", icon: "set-meal" as const },
-  { label: "Healthy", icon: "eco" as const }
-];
+const mealCategories = SMAG_KITCHEN_CATEGORIES;
 
 const trendingItems = [
   {
@@ -57,9 +73,15 @@ const trendingItems = [
 export function SmagExploreNative() {
   const router = useAppRouter();
   const [activeTab, setActiveTab] = useState<ExploreTab>("smag");
+  const [activeMealCat, setActiveMealCat] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [allItems, setAllItems] = useState<MenuItem[]>([]);
   const [avatarUri, setAvatarUri] = useState("");
+  const [selectedDish, setSelectedDish] = useState<SelectedDish | null>(null);
+  const [customSelections, setCustomSelections] = useState<Record<string, string>>({});
+  const [quantity, setQuantity] = useState(1);
+  const [addingDish, setAddingDish] = useState(false);
+  const isOnline = useNetworkStatus();
 
   useEffect(() => {
     void getUserProfile().then((p) => setAvatarUri(p.avatarUri));
@@ -84,6 +106,73 @@ export function SmagExploreNative() {
   }, [searchQuery, allItems]);
 
   const showSearch = activeTab === "smag" && searchQuery.trim().length > 0;
+  const selectedGroups = useMemo(
+    () => selectedDish ? customGroupsForDish(selectedDish.dish, selectedDish.category.label) : [],
+    [selectedDish]
+  );
+  const selectedOptions = useMemo(
+    () => selectedGroups.map((group) => ({
+      label: group.label,
+      option: group.options.find((opt) => opt.value === customSelections[group.key]) ?? group.options[0]
+    })),
+    [customSelections, selectedGroups]
+  );
+  const selectedBasePrice = selectedDish?.dish.priceValue ?? 0;
+  const selectedExtraCost = selectedOptions.reduce((sum, item) => sum + (item.option?.extraCost ?? 0), 0);
+  const selectedUnitPrice = selectedBasePrice + selectedExtraCost;
+  const selectedTotal = selectedUnitPrice * quantity;
+
+  function openDishDetail(dish: MealDish, category: MealCategory) {
+    const groups = customGroupsForDish(dish, category.label);
+    const defaults = groups.reduce<Record<string, string>>((acc, group) => {
+      acc[group.key] = group.options[0]?.value ?? "";
+      return acc;
+    }, {});
+    setSelectedDish({ dish, category });
+    setCustomSelections(defaults);
+    setQuantity(1);
+  }
+
+  async function handleAddConfiguredDish() {
+    if (!selectedDish) return;
+    const user = getCurrentUser();
+    if (!user) {
+      Alert.alert("Sign in required", "Please sign in before adding items to your cart.");
+      return;
+    }
+
+    const cartPayload = {
+      menuItemId: menuItemIdForDish(selectedDish.dish.name),
+      name: selectedDish.dish.name,
+      basePrice: selectedBasePrice,
+      price: selectedUnitPrice,
+      imageUrl: selectedDish.dish.image,
+      quantity,
+      restaurantId: "smag_kitchen",
+      restaurantName: "Smag Kitchen",
+      customizations: selectedOptions.map((item) => ({
+        label: item.label,
+        value: item.option?.value ?? "",
+        extraCost: item.option?.extraCost ?? 0
+      }))
+    };
+
+    setAddingDish(true);
+    try {
+      await haptics.tap();
+      if (!isOnline) {
+        await enqueueCartMutation({ type: "add", userId: user.uid, item: cartPayload });
+        setSelectedDish(null);
+        Alert.alert("You're offline", "Item saved. It will be added to your cart when you reconnect.");
+        return;
+      }
+      await addToCart(user.uid, cartPayload);
+      setSelectedDish(null);
+      router.push("/smag_my_cart");
+    } finally {
+      setAddingDish(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
@@ -199,24 +288,60 @@ export function SmagExploreNative() {
 
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.catRow}>
-                    {categories.map((cat, idx) => (
+                    {mealCategories.map((cat, idx) => (
                       <Pressable
                         key={cat.label}
                         style={styles.catItem}
-                        onPress={() => router.push("/smag_menu")}
+                        onPress={() => setActiveMealCat(idx)}
                       >
-                        <View style={[styles.catCircle, idx === 0 && styles.catCircleActive]}>
+                        <View style={[styles.catCircle, activeMealCat === idx && styles.catCircleActive]}>
                           <MaterialIcons
                             name={cat.icon}
                             size={28}
-                            color={idx === 0 ? "#ffefeb" : "#8f3000"}
+                            color={activeMealCat === idx ? "#ffefeb" : "#8f3000"}
                           />
                         </View>
-                        <Text style={styles.catLabel}>{cat.label}</Text>
+                        <Text style={[styles.catLabel, activeMealCat === idx && styles.catLabelActive]}>
+                          {cat.label}
+                        </Text>
                       </Pressable>
                     ))}
                   </View>
                 </ScrollView>
+
+                {mealCategories[activeMealCat].dishes.map((dish) => (
+                  <Pressable
+                    key={dish.name}
+                    style={styles.foodCard}
+                    onPress={() => openDishDetail(dish, mealCategories[activeMealCat])}
+                  >
+                    <View style={styles.foodImageWrap}>
+                      <AppImage source={{ uri: dish.image }} style={styles.foodImage} />
+                      <View style={styles.mealBadge}>
+                        <MaterialIcons name={mealCategories[activeMealCat].icon} size={12} color="#a33800" />
+                        <Text style={styles.mealBadgeText}>{mealCategories[activeMealCat].label}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.foodBody}>
+                      <View style={styles.foodTitleRow}>
+                        <Text style={styles.foodTitle}>{dish.name}</Text>
+                        <Text style={styles.foodPrice}>{dish.price}</Text>
+                      </View>
+                      <Text style={styles.foodSub}>{dish.description}</Text>
+                      <View style={styles.foodBottom}>
+                        <Text style={styles.tag}>{mealCategories[activeMealCat].label}</Text>
+                        <Pressable
+                          style={styles.addBtn}
+                          onPress={() => openDishDetail(dish, mealCategories[activeMealCat])}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Customize ${dish.name}`}
+                        >
+                          <MaterialIcons name="add" size={22} color="#ffefeb" />
+                        </Pressable>
+                      </View>
+                    </View>
+                  </Pressable>
+                ))}
 
                 <Text style={styles.trendingTitle}>Trending Now</Text>
                 <Text style={styles.trendingSubtitle}>Curated bites from our top kitchens</Text>
@@ -279,7 +404,147 @@ export function SmagExploreNative() {
         )}
 
       </ScrollView>
+      <DishDetailModal
+        selectedDish={selectedDish}
+        groups={selectedGroups}
+        selections={customSelections}
+        quantity={quantity}
+        unitPrice={selectedUnitPrice}
+        total={selectedTotal}
+        adding={addingDish}
+        onClose={() => {
+          if (!addingDish) setSelectedDish(null);
+        }}
+        onSelect={(groupKey, value) => setCustomSelections((prev) => ({ ...prev, [groupKey]: value }))}
+        onQuantityChange={(delta) => setQuantity((prev) => Math.max(1, Math.min(9, prev + delta)))}
+        onAdd={handleAddConfiguredDish}
+      />
     </SafeAreaView>
+  );
+}
+
+function DishDetailModal({
+  selectedDish,
+  groups,
+  selections,
+  quantity,
+  unitPrice,
+  total,
+  adding,
+  onClose,
+  onSelect,
+  onQuantityChange,
+  onAdd
+}: {
+  selectedDish: SelectedDish | null;
+  groups: CustomGroup[];
+  selections: Record<string, string>;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  adding: boolean;
+  onClose: () => void;
+  onSelect: (groupKey: string, value: string) => void;
+  onQuantityChange: (delta: number) => void;
+  onAdd: () => void;
+}) {
+  const dish = selectedDish?.dish;
+  const category = selectedDish?.category;
+
+  return (
+    <Modal visible={Boolean(selectedDish)} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <SafeAreaView style={styles.detailSafe} edges={["top"]}>
+        {dish && category ? (
+          <View style={styles.detailShell}>
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailContent}>
+              <View style={styles.detailHero}>
+                <AppImage source={{ uri: dish.image }} style={styles.detailImage} />
+                <Pressable style={styles.detailCloseBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close dish details">
+                  <MaterialIcons name="close" size={28} color="#ffffff" />
+                </Pressable>
+                <View style={styles.detailSearchBtn}>
+                  <MaterialIcons name="search" size={28} color="#1f1a17" />
+                </View>
+              </View>
+
+              <View style={styles.detailBody}>
+                <View style={styles.detailBadge}>
+                  <MaterialIcons name={category.icon} size={14} color="#a33800" />
+                  <Text style={styles.detailBadgeText}>{category.label}</Text>
+                </View>
+                <Text style={styles.detailTitle}>{dish.name}</Text>
+                <Text style={styles.detailPrice}>{formatNaira(unitPrice)}</Text>
+                <Text style={styles.detailDesc}>{dish.description}</Text>
+
+                <View style={styles.quickHeader}>
+                  <Text style={styles.quickTitle}>Customize it quickly</Text>
+                  <Text style={styles.quickSub}>Choose spice, meal style and packaging before adding to cart.</Text>
+                </View>
+
+                {groups.map((group) => (
+                  <View key={group.key} style={styles.detailGroup}>
+                    <Text style={styles.detailGroupTitle}>{group.label}</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                      <View style={styles.optionRow}>
+                        {group.options.map((option) => {
+                          const selected = selections[group.key] === option.value;
+                          return (
+                            <Pressable
+                              key={option.value}
+                              style={[styles.optionCard, selected && styles.optionCardActive]}
+                              onPress={() => onSelect(group.key, option.value)}
+                              accessibilityRole="radio"
+                              accessibilityState={{ selected }}
+                            >
+                              <View style={styles.optionTop}>
+                                <Text style={[styles.optionTitle, selected && styles.optionTitleActive]}>{option.value}</Text>
+                                <View style={[styles.optionRadio, selected && styles.optionRadioActive]}>
+                                  {selected ? <View style={styles.optionRadioDot} /> : null}
+                                </View>
+                              </View>
+                              <Text style={styles.optionDetail}>{option.detail}</Text>
+                              <Text style={styles.optionCost}>
+                                {option.extraCost > 0 ? `+${formatNaira(option.extraCost)}` : "Included"}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </ScrollView>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+
+            <View style={styles.detailFooter}>
+              <View style={styles.qtyPill}>
+                <Pressable style={styles.qtyBtnDetail} onPress={() => onQuantityChange(-1)} accessibilityRole="button" accessibilityLabel="Decrease quantity">
+                  <MaterialIcons name="remove" size={18} color="#a33800" />
+                </Pressable>
+                <Text style={styles.qtyTextDetail}>{quantity}</Text>
+                <Pressable style={styles.qtyBtnDetail} onPress={() => onQuantityChange(1)} accessibilityRole="button" accessibilityLabel="Increase quantity">
+                  <MaterialIcons name="add" size={18} color="#a33800" />
+                </Pressable>
+              </View>
+              <Pressable
+                style={[styles.detailAddBtn, adding && { opacity: 0.7 }]}
+                onPress={onAdd}
+                disabled={adding}
+                accessibilityRole="button"
+                accessibilityLabel={`Add ${quantity} ${dish.name} to cart for ${formatNaira(total)}`}
+                accessibilityState={{ busy: adding }}
+              >
+                {adding ? (
+                  <ActivityIndicator color="#ffefeb" />
+                ) : (
+                  <Text style={styles.detailAddText}>Add {quantity} for {formatNaira(total)}</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+      </SafeAreaView>
+    </Modal>
   );
 }
 
@@ -322,6 +587,13 @@ const styles = StyleSheet.create({
   catCircle: { width: 70, height: 70, borderRadius: 35, backgroundColor: "#ffdbc9", justifyContent: "center", alignItems: "center" },
   catCircleActive: { backgroundColor: "#a33800" },
   catLabel: { color: "#805032", fontSize: 12, fontWeight: "700" },
+  catLabelActive: { color: "#a33800", fontWeight: "900" },
+  mealBadge: {
+    position: "absolute", top: 12, left: 12, backgroundColor: "rgba(255,255,255,0.92)",
+    borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+    flexDirection: "row", alignItems: "center", gap: 4
+  },
+  mealBadgeText: { color: "#a33800", fontWeight: "800", fontSize: 12 },
   trendingTitle: { marginTop: 22, color: "#4b240a", fontSize: 28, fontWeight: "900" },
   trendingSubtitle: { marginTop: 2, marginBottom: 14, color: "#805032", fontSize: 14 },
   foodCard: {
@@ -351,5 +623,74 @@ const styles = StyleSheet.create({
   collectionOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.38)" },
   collectionTextWrap: { position: "absolute", left: 10, right: 10, bottom: 10 },
   collectionTitle: { color: "#fff", fontSize: 16, fontWeight: "800" },
-  collectionCount: { color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 2 }
+  collectionCount: { color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 2 },
+  detailSafe: { flex: 1, backgroundColor: "#ffffff" },
+  detailShell: { flex: 1, backgroundColor: "#ffffff" },
+  detailContent: { paddingBottom: 132 },
+  detailHero: { height: 390, backgroundColor: "#ffffff", position: "relative" },
+  detailImage: { width: "100%", height: "100%" },
+  detailCloseBtn: {
+    position: "absolute", top: 16, left: 18,
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: "rgba(0,0,0,0.36)", alignItems: "center", justifyContent: "center"
+  },
+  detailSearchBtn: {
+    position: "absolute", right: 18, bottom: 16,
+    width: 54, height: 54, borderRadius: 27,
+    backgroundColor: "rgba(255,255,255,0.94)", alignItems: "center", justifyContent: "center",
+    borderWidth: 1, borderColor: "rgba(75,36,10,0.12)"
+  },
+  detailBody: { paddingHorizontal: 22, paddingTop: 22 },
+  detailBadge: {
+    alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5,
+    backgroundColor: "#ffede5", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5,
+    marginBottom: 10
+  },
+  detailBadgeText: { color: "#a33800", fontSize: 12, fontWeight: "800" },
+  detailTitle: { color: "#17110d", fontSize: 32, fontWeight: "900", lineHeight: 38 },
+  detailPrice: { marginTop: 8, color: "#17110d", fontSize: 28, fontWeight: "900" },
+  detailDesc: { marginTop: 14, color: "#73665f", fontSize: 17, lineHeight: 25 },
+  quickHeader: { marginTop: 28, marginBottom: 8 },
+  quickTitle: { color: "#17110d", fontSize: 22, fontWeight: "900" },
+  quickSub: { marginTop: 8, color: "#73665f", fontSize: 15, lineHeight: 21 },
+  detailGroup: { marginTop: 20 },
+  detailGroupTitle: { color: "#17110d", fontSize: 16, fontWeight: "900", marginBottom: 10 },
+  optionRow: { flexDirection: "row", gap: 12, paddingRight: 22 },
+  optionCard: {
+    width: 245, minHeight: 148, borderRadius: 8, borderWidth: 1,
+    borderColor: "#ded5cf", backgroundColor: "#ffffff", padding: 14
+  },
+  optionCardActive: { borderColor: "#0b8a66", backgroundColor: "#f2fbf8" },
+  optionTop: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  optionTitle: { flex: 1, color: "#17110d", fontSize: 17, lineHeight: 22, fontWeight: "900" },
+  optionTitleActive: { color: "#063f31" },
+  optionRadio: {
+    width: 32, height: 32, borderRadius: 16, borderWidth: 2,
+    borderColor: "#847a73", alignItems: "center", justifyContent: "center"
+  },
+  optionRadioActive: { borderColor: "#0b8a66" },
+  optionRadioDot: { width: 16, height: 16, borderRadius: 8, backgroundColor: "#0b8a66" },
+  optionDetail: { marginTop: 8, color: "#73665f", fontSize: 14, lineHeight: 19 },
+  optionCost: { marginTop: 10, color: "#17110d", fontSize: 15, fontWeight: "900" },
+  detailFooter: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    flexDirection: "row", alignItems: "center", gap: 10,
+    paddingHorizontal: 18, paddingTop: 12, paddingBottom: 22,
+    backgroundColor: "rgba(255,255,255,0.98)", borderTopWidth: 1, borderTopColor: "#eee4de"
+  },
+  qtyPill: {
+    height: 56, borderRadius: 28, backgroundColor: "#ffede5",
+    flexDirection: "row", alignItems: "center", paddingHorizontal: 8, gap: 4
+  },
+  qtyBtnDetail: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center"
+  },
+  qtyTextDetail: { width: 28, textAlign: "center", color: "#17110d", fontSize: 18, fontWeight: "900" },
+  detailAddBtn: {
+    flex: 1, minHeight: 62, borderRadius: 31,
+    backgroundColor: "#0b8a66", alignItems: "center", justifyContent: "center",
+    paddingHorizontal: 14
+  },
+  detailAddText: { color: "#ffefeb", fontSize: 18, fontWeight: "900", textAlign: "center" }
 });

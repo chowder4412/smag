@@ -1,5 +1,13 @@
 {
   "projects": {
     "default": "smag-12fe9"
+  },
+  "targets": {},
+  "etags": {
+    "smag-12fe9": {
+      "extensionInstances": {
+        "trigger-email": "443ce7f312336311809b1516c005e85e3f26fef9e4867fef06086241659a0ae5"
+      }
+    }
   }
 }

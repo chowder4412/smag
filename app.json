@@ -24,7 +24,7 @@
     "ios": {
       "icon": "./assets/smag_logo.png",
       "bundleIdentifier": "com.smag.mobile",
-      "googleServicesFile": "./firebase/GoogleService-Info.plist",
+      "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Allow Smag to use your location to show nearby restaurants.",
         "CFBundleURLTypes": [
@@ -39,7 +39,7 @@
     "android": {
       "icon": "./assets/smag_logo.png",
       "package": "com.smag.mobile",
-      "googleServicesFile": "./firebase/google-services.json",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/smag_logo.png",
         "backgroundColor": "#fff4f0"
@@ -87,12 +87,6 @@
         {
           "locationAlwaysAndWhenInUsePermission": "Allow Smag to use your location to show nearby restaurants.",
           "locationWhenInUsePermission": "Allow Smag to use your location to show nearby restaurants."
-        }
-      ],
-      [
-        "react-native-maps",
-        {
-          "googleMapsApiKey": "$(GOOGLE_MAPS_API_KEY)"
         }
       ]
     ],

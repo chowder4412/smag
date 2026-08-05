@@ -124,6 +124,14 @@ service cloud.firestore {
         || isConciergeEmployee();
     }
 
+    function canAccessVipChat(sessionId) {
+      return isSignedIn() && (
+        sessionId == request.auth.uid
+        || hasAdminProfile()
+        || isConciergeEmployee()
+      );
+    }
+
     function validRolePayload() {
       return request.resource.data.name is string
         && request.resource.data.description is string
@@ -436,8 +444,7 @@ service cloud.firestore {
     }
 
     match /kitchen_applications/{appId} {
-      allow create: if request.auth != null
-        && request.resource.data.email is string
+      allow create: if request.resource.data.email is string
         && request.resource.data.businessName is string
         && request.resource.data.status == "pending";
       allow read: if hasAdminProfile();
@@ -471,15 +478,30 @@ service cloud.firestore {
     }
 
     match /vip_chat_sessions/{sessionId} {
-      allow read, create: if isSignedIn();
-      allow update: if isSignedIn();
+      allow read: if canAccessVipChat(sessionId);
+      allow create: if isSignedIn()
+        && sessionId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if canAccessVipChat(sessionId)
+        && request.resource.data.userId == resource.data.userId;
     }
 
     match /vip_chat_sessions/{sessionId}/messages/{msgId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
+      allow read: if canAccessVipChat(sessionId);
+      allow create: if canAccessVipChat(sessionId)
         && request.resource.data.text is string
-        && request.resource.data.text.size() > 0;
+        && request.resource.data.text.size() > 0
+        && (
+          (
+            sessionId == request.auth.uid
+            && request.resource.data.from == "user"
+            && request.resource.data.userId == request.auth.uid
+          )
+          || (
+            (hasAdminProfile() || isConciergeEmployee())
+            && request.resource.data.from == "agent"
+          )
+        );
     }
 
     match /order_reviews/{reviewId} {

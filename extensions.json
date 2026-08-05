@@ -16,7 +16,7 @@
       "TTL_EXPIRE_VALUE": "1"
     },
     "systemParams": {
-      "firebaseextensions.v1beta.function/location": "us-central1",
+      "firebaseextensions.v1beta.function/location": "nam5",
       "firebaseextensions.v1beta.v2function/memory": "256Mi"
     }
   }

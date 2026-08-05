@@ -27,10 +27,14 @@ export function SmagVipSupportChatNative() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   // Ensure session doc exists
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     void setDoc(doc(db, "vip_chat_sessions", sessionId), {
       userId: user.uid,
       updatedAt: serverTimestamp(),
@@ -40,21 +44,34 @@ export function SmagVipSupportChatNative() {
 
   // Subscribe to messages
   useEffect(() => {
+    if (!user) {
+      setMessages([]);
+      setLoading(false);
+      return;
+    }
     const q = query(
       collection(db, "vip_chat_sessions", sessionId, "messages"),
       orderBy("createdAt", "asc")
     );
-    return onSnapshot(q, (snap) => {
-      setMessages(snap.docs.map((d) => ({
-        id: d.id,
-        from: d.data().from as "user" | "agent",
-        text: String(d.data().text ?? ""),
-        createdAt: d.data().createdAt?.toDate?.()?.toISOString?.() ?? ""
-      })));
-      setLoading(false);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    });
-  }, [sessionId]);
+    return onSnapshot(
+      q,
+      (snap) => {
+        setMessages(snap.docs.map((d) => ({
+          id: d.id,
+          from: d.data().from as "user" | "agent",
+          text: String(d.data().text ?? ""),
+          createdAt: d.data().createdAt?.toDate?.()?.toISOString?.() ?? ""
+        })));
+        setError("");
+        setLoading(false);
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      },
+      () => {
+        setError("Support chat is unavailable for this account right now.");
+        setLoading(false);
+      }
+    );
+  }, [sessionId, user]);
 
   async function sendMessage(messageText: string) {
     const trimmed = messageText.trim();
@@ -99,8 +116,21 @@ export function SmagVipSupportChatNative() {
         <Text style={styles.noticeText}>Priority support for active orders</Text>
       </View>
 
-      {loading ? (
+      {!user ? (
+        <View style={styles.center}>
+          <MaterialIcons name="lock-outline" size={40} color="#ffdbc9" />
+          <Text style={styles.emptyText}>Sign in to chat with support</Text>
+          <Pressable style={styles.loginBtn} onPress={() => router.push("/smag_login")}>
+            <Text style={styles.loginBtnText}>Sign In</Text>
+          </Pressable>
+        </View>
+      ) : loading ? (
         <View style={styles.center}><ActivityIndicator color="#a33800" /></View>
+      ) : error ? (
+        <View style={styles.center}>
+          <MaterialIcons name="error-outline" size={40} color="#ffdbc9" />
+          <Text style={styles.emptyText}>{error}</Text>
+        </View>
       ) : (
         <FlatList
           ref={flatListRef}
@@ -180,6 +210,8 @@ const styles = StyleSheet.create({
   emptyWrap: { flex: 1, alignItems: "center", justifyContent: "center", gap: 10, paddingTop: 60 },
   emptyText: { color: "#4b240a", fontSize: 16, fontWeight: "800", textAlign: "center" },
   emptySub: { color: "#805032", fontSize: 13, textAlign: "center" },
+  loginBtn: { marginTop: 14, borderRadius: 18, backgroundColor: "#a33800", paddingHorizontal: 18, paddingVertical: 10 },
+  loginBtnText: { color: "#ffefeb", fontSize: 13, fontWeight: "900" },
   message: { maxWidth: "84%", borderRadius: 16, paddingHorizontal: 12, paddingVertical: 10 },
   messageAgent: { backgroundColor: "#ffffff", alignSelf: "flex-start" },
   messageUser: { backgroundColor: "#a33800", alignSelf: "flex-end" },

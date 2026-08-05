@@ -1,12 +1,32 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { useLocalSearchParams } from "expo-router";
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View, Image } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View, Image } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { firebaseSendPasswordReset, getFirebaseAuthErrorMessage } from "@/lib/firebase/auth";
 import { useAppRouter } from "@/lib/useAppRouter";
 
 export function SmagResetLinkSentNative() {
   const router = useAppRouter();
+  const { email } = useLocalSearchParams<{ email?: string }>();
   const [resentCount, setResentCount] = useState(0);
+  const [resending, setResending] = useState(false);
+
+  async function resendLink() {
+    if (!email) {
+      Alert.alert("Email required", "Go back and enter your email address again.");
+      return;
+    }
+    setResending(true);
+    try {
+      await firebaseSendPasswordReset(email);
+      setResentCount((value) => value + 1);
+    } catch (err) {
+      Alert.alert("Reset failed", getFirebaseAuthErrorMessage(err));
+    } finally {
+      setResending(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -33,9 +53,11 @@ export function SmagResetLinkSentNative() {
           </Pressable>
 
           <Text style={styles.helper}>Didn&apos;t receive the email?</Text>
-          <Pressable style={styles.resendBtn} onPress={() => setResentCount((value) => value + 1)}>
+          <Pressable style={styles.resendBtn} onPress={resendLink} disabled={resending}>
             <MaterialIcons name="refresh" size={17} color="#a33800" />
-            <Text style={styles.resendText}>{resentCount > 0 ? "Link Resent" : "Resend Link"}</Text>
+            <Text style={styles.resendText}>
+              {resending ? "Sending..." : resentCount > 0 ? "Link Resent" : "Resend Link"}
+            </Text>
           </Pressable>
 
           <Image source={require("../../../assets/smag_logo.png")} style={styles.brand} resizeMode="contain" />

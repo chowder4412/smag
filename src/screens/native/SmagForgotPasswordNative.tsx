@@ -26,8 +26,9 @@ export function SmagForgotPasswordNative() {
     setError(null);
     setLoading(true);
     try {
-      await firebaseSendPasswordReset(email.trim());
-      router.push("/smag_reset_link_sent");
+      const normalizedEmail = email.trim();
+      await firebaseSendPasswordReset(normalizedEmail);
+      router.push(`/smag_reset_link_sent?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (err) {
       setError(getFirebaseAuthErrorMessage(err));
     } finally {

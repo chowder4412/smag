@@ -1,7 +1,10 @@
 import { Platform } from "react-native";
+import Constants from "expo-constants";
 
 // expo-notifications and expo-device are native-only — guard all usage
 const isNative = Platform.OS !== "web";
+// Push notifications (remote) are not supported in Expo Go since SDK 53
+const isExpoGo = Constants.appOwnership === "expo";
 
 type NotificationResponse = { notification: { request: { content: { data: Record<string, unknown> } } } };
 type Notification = { request: { content: { data: Record<string, unknown> } } };
@@ -12,7 +15,7 @@ function noopSubscription(): Subscription {
 }
 
 export async function registerForPushNotifications(userId: string): Promise<string | null> {
-  if (!isNative) return null;
+  if (!isNative || isExpoGo) return null;
 
   try {
     const Device = await import("expo-device");
@@ -68,7 +71,7 @@ export async function registerForPushNotifications(userId: string): Promise<stri
 export function addNotificationResponseListener(
   handler: (response: NotificationResponse) => void
 ): Subscription {
-  if (!isNative) return noopSubscription();
+  if (!isNative || isExpoGo) return noopSubscription();
   try {
     // Dynamic require so web bundler never evaluates expo-notifications
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -82,7 +85,7 @@ export function addNotificationResponseListener(
 export function addNotificationReceivedListener(
   handler: (notification: Notification) => void
 ): Subscription {
-  if (!isNative) return noopSubscription();
+  if (!isNative || isExpoGo) return noopSubscription();
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Notifications = require("expo-notifications");

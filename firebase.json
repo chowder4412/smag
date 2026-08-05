@@ -1,4 +1,7 @@
 {
+  "extensions": {
+    "trigger-email": "firebase/firestore-send-email@0.2.9"
+  },
   "functions": [
     {
       "source": "functions",

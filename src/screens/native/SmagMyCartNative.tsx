@@ -250,6 +250,11 @@ function SwipeableCartItem({
         <AppImage source={{ uri: item.imageUrl }} style={styles.itemImage} />
         <View style={{ flex: 1 }}>
           <Text style={styles.itemName}>{item.name}</Text>
+          {item.customizations?.length ? (
+            <Text style={styles.itemCustoms} numberOfLines={2}>
+              {item.customizations.map((c) => c.value).join(" • ")}
+            </Text>
+          ) : null}
           <Text style={styles.itemPrice}>₦{item.price.toLocaleString()}</Text>
           <View style={styles.qtyRow}>
             <Pressable
@@ -317,6 +322,7 @@ const styles = StyleSheet.create({
   deleteBtnText: { color: "#ffefeb", fontSize: 10, fontWeight: "800" },
   itemImage: { width: 88, height: 88, borderRadius: 12 },
   itemName: { color: "#4b240a", fontSize: 18, fontWeight: "800" },
+  itemCustoms: { color: "#805032", fontSize: 11, lineHeight: 15, marginTop: 3 },
   itemPrice: { marginTop: 2, color: "#a33800", fontSize: 22, fontWeight: "900" },
   qtyRow: { marginTop: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   qtyBtn: {

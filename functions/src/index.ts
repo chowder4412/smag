@@ -874,7 +874,7 @@ export const approveDriverApplication = onCall(async (request) => {
 
   // Send setup email
   const setupLink = await admin.auth().generatePasswordResetLink(application.email, {
-    url: process.env.SMAG_BUSINESS_APP_URL ?? "smag-business://setup"
+    url: (process.env.SMAG_BUSINESS_APP_URL && process.env.SMAG_BUSINESS_APP_URL.startsWith("http")) ? process.env.SMAG_BUSINESS_APP_URL : "https://smag-12fe9.firebaseapp.com/setup"
   });
 
   await db.collection("mail").add({
@@ -988,7 +988,7 @@ export const sendEmployeeInvite = onCall(async (request) => {
 
   // Generate password setup link
   const setupLink = await admin.auth().generatePasswordResetLink(email, {
-    url: process.env.SMAG_BUSINESS_APP_URL ?? "smag-business://setup"
+    url: (process.env.SMAG_BUSINESS_APP_URL && process.env.SMAG_BUSINESS_APP_URL.startsWith("http")) ? process.env.SMAG_BUSINESS_APP_URL : "https://smag-12fe9.firebaseapp.com/setup"
   });
 
   // Send email via Firebase Extensions (Trigger Email) or fallback log
@@ -1102,7 +1102,7 @@ export const approveKitchenApplication = onCall(async (request) => {
 
   // Generate password setup link
   const setupLink = await admin.auth().generatePasswordResetLink(application.email, {
-    url: process.env.SMAG_BUSINESS_APP_URL ?? "smag-business://setup"
+    url: (process.env.SMAG_BUSINESS_APP_URL && process.env.SMAG_BUSINESS_APP_URL.startsWith("http")) ? process.env.SMAG_BUSINESS_APP_URL : "https://smag-12fe9.firebaseapp.com/setup"
   });
 
   // Send approval email

@@ -1,5 +1,6 @@
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
+import Constants from "expo-constants";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
@@ -35,6 +36,7 @@ export function SmagLoginNative() {
   const router = useRouter() as { push: (href: string) => void; replace: (href: string) => void; back: () => void };
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -123,8 +125,6 @@ export function SmagLoginNative() {
     if (!success) return;
     setSocialLoading("phone"); // reuse loading state
     try {
-      // Re-authenticate silently — Firebase session should still be valid
-      // If not, prompt password
       const user = getCurrentUser();
       if (user) {
         await haptics.success();
@@ -140,6 +140,10 @@ export function SmagLoginNative() {
   }
 
   async function handleGoogleSignIn() {
+    if (Constants.appOwnership === "expo") {
+      Alert.alert("Not Available", "Google Sign-In requires a development build and is not supported in Expo Go.");
+      return;
+    }
     setSocialLoading("google");
     setAuthError(null);
     try {
@@ -195,12 +199,14 @@ export function SmagLoginNative() {
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        {/* Header Hero Section */}
         <View style={styles.heroWrap}>
           <AppImage source={{ uri: heroImage }} style={styles.heroImage} />
           <View style={styles.heroOverlay} />
           <Image source={require("../../../assets/smag_logo.png")} style={styles.logo} resizeMode="contain" />
         </View>
 
+        {/* Content & Form Card */}
         <View style={styles.content}>
           <Text style={styles.title}>
             Experience{"\n"}
@@ -210,6 +216,7 @@ export function SmagLoginNative() {
             Join Smag and explore a curated gallery of the city&apos;s finest culinary creations.
           </Text>
 
+          {/* Email Field */}
           <Text style={styles.label}>Email Address</Text>
           <TextInput
             placeholder="chef@smag.com"
@@ -223,31 +230,39 @@ export function SmagLoginNative() {
           />
           {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
-          <Text style={[styles.label, { marginTop: 10 }]}>Password</Text>
-          <TextInput
-            placeholder="••••••••"
-            placeholderTextColor="#80503299"
-            testID="login-password-input"
-            style={[styles.input, passwordError ? styles.inputError : null]}
-            value={password}
-            onChangeText={(t) => { setPassword(t); setPasswordError(null); setAuthError(null); }}
-            secureTextEntry
-            autoCapitalize="none"
-          />
+          {/* Password Field */}
+          <Text style={[styles.label, { marginTop: 14 }]}>Password</Text>
+          <View style={styles.passwordWrap}>
+            <TextInput
+              placeholder="••••••••"
+              placeholderTextColor="#80503299"
+              testID="login-password-input"
+              style={[styles.input, styles.passwordInput, passwordError ? styles.inputError : null]}
+              value={password}
+              onChangeText={(t) => { setPassword(t); setPasswordError(null); setAuthError(null); }}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <Pressable style={styles.eyeBtn} onPress={() => setShowPassword((v) => !v)}>
+              <MaterialIcons name={showPassword ? "visibility" : "visibility-off"} size={22} color="#805032" />
+            </Pressable>
+          </View>
           {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
           {authError ? <Text style={styles.errorText}>{authError}</Text> : null}
 
+          {/* Primary Action Button */}
           <Pressable style={styles.primaryButton} onPress={handleEmailSignIn} disabled={loading}>
             <Text style={styles.primaryButtonText}>{loading ? "Signing In..." : "Continue with Email"}</Text>
           </Pressable>
 
+          {/* Divider */}
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
             <Text style={styles.dividerText}>OR SIGN IN WITH</Text>
             <View style={styles.divider} />
           </View>
 
-          {/* Google */}
+          {/* Google Sign In */}
           <Pressable
             style={[styles.socialBtn, socialLoading !== null ? { opacity: 0.6 } : {}]}
             onPress={handleGoogleSignIn}
@@ -261,7 +276,7 @@ export function SmagLoginNative() {
             </Text>
           </Pressable>
 
-          {/* Apple — only shown on iOS */}
+          {/* Apple Sign In — iOS Only */}
           {Platform.OS === "ios" ? (
             <Pressable
               style={[styles.socialBtn, styles.appleBtn, socialLoading !== null ? { opacity: 0.6 } : {}]}
@@ -277,16 +292,18 @@ export function SmagLoginNative() {
             </Pressable>
           ) : null}
 
-          {/* Phone */}
+          {/* Phone Sign In */}
           <Pressable style={styles.socialBtn} onPress={handlePhoneSignIn} disabled={socialLoading !== null}>
             <MaterialIcons name="phone" size={20} color="#a33800" />
             <Text style={styles.socialText}>Continue with Phone</Text>
           </Pressable>
 
+          {/* Forgot Password */}
           <Pressable onPress={() => router.push("/smag_forgot_password")}>
             <Text style={styles.forgotLink}>Forgot password?</Text>
           </Pressable>
 
+          {/* Biometrics Option */}
           {biometricAvailable && (
             <Pressable
               style={styles.biometricBtn}
@@ -298,6 +315,7 @@ export function SmagLoginNative() {
             </Pressable>
           )}
 
+          {/* Footer Link */}
           <Text style={styles.footerText}>
             New to the gallery?
             <Text style={styles.footerLink} onPress={() => router.push("/smag_sign_up")}>
@@ -313,27 +331,70 @@ export function SmagLoginNative() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#fff4f0" },
   scroll: { flexGrow: 1 },
-  heroWrap: { height: 280, position: "relative" },
+  heroWrap: {
+    height: 270,
+    position: "relative",
+    marginTop: 4,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    overflow: "hidden"
+  },
   heroImage: { width: "100%", height: "100%" },
-  heroOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(163,56,0,0.18)" },
-  logo: { position: "absolute", top: 22, left: 16, width: 90, height: 44 },
-  content: { flex: 1, paddingHorizontal: 24, paddingTop: 20, paddingBottom: 30 },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(163, 56, 0, 0.22)"
+  },
+  logo: {
+    position: "absolute",
+    top: 22,
+    left: 20,
+    width: 100,
+    height: 48,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6
+  },
+  content: { flex: 1, paddingHorizontal: 24, paddingTop: 22, paddingBottom: 34 },
   title: { color: "#4b240a", fontSize: 34, lineHeight: 40, fontWeight: "900" },
   titleAccent: { color: "#ff5e07", fontStyle: "italic" },
-  subtitle: { color: "#805032", marginTop: 8, marginBottom: 18, fontSize: 15, lineHeight: 22 },
+  subtitle: { color: "#805032", marginTop: 8, marginBottom: 20, fontSize: 15, lineHeight: 22 },
   label: { color: "#4b240a", fontSize: 14, marginBottom: 8, fontWeight: "700" },
-  input: { backgroundColor: "#ffede5", borderRadius: 16, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, color: "#4b240a" },
+  input: {
+    backgroundColor: "#ffede5",
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: "#4b240a",
+    borderWidth: 1,
+    borderColor: "rgba(221, 159, 124, 0.35)"
+  },
+  passwordWrap: { position: "relative" },
+  passwordInput: { paddingRight: 48 },
+  eyeBtn: { position: "absolute", right: 14, top: 14, padding: 4 },
   inputError: { borderWidth: 1.5, borderColor: "#b31b25" },
   errorText: { color: "#b31b25", fontSize: 12, marginTop: 4, marginLeft: 4 },
-  primaryButton: { marginTop: 14, backgroundColor: "#a33800", borderRadius: 999, paddingVertical: 16, alignItems: "center" },
+  primaryButton: {
+    marginTop: 18,
+    backgroundColor: "#a33800",
+    borderRadius: 999,
+    paddingVertical: 16,
+    alignItems: "center",
+    shadowColor: "#a33800",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    elevation: 4
+  },
   primaryButtonText: { color: "#ffefeb", fontWeight: "800", fontSize: 16 },
-  dividerRow: { marginTop: 20, marginBottom: 12, flexDirection: "row", alignItems: "center", gap: 10 },
-  divider: { flex: 1, height: 1, backgroundColor: "rgba(221,159,124,0.35)" },
+  dividerRow: { marginTop: 22, marginBottom: 14, flexDirection: "row", alignItems: "center", gap: 10 },
+  divider: { flex: 1, height: 1, backgroundColor: "rgba(221, 159, 124, 0.35)" },
   dividerText: { color: "#805032", fontSize: 10, fontWeight: "700", letterSpacing: 1 },
   socialBtn: {
     marginBottom: 10,
     backgroundColor: "#ffffff",
-    borderRadius: 14,
+    borderRadius: 16,
     minHeight: 52,
     flexDirection: "row",
     justifyContent: "center",
@@ -345,10 +406,10 @@ const styles = StyleSheet.create({
   appleBtn: { backgroundColor: "#000000", borderColor: "#000000" },
   googleIcon: { width: 18, height: 18 },
   socialText: { color: "#4b240a", fontWeight: "700", fontSize: 15 },
-  forgotLink: { marginTop: 8, textAlign: "center", color: "#a33800", fontSize: 13, fontWeight: "700" },
+  forgotLink: { marginTop: 10, textAlign: "center", color: "#a33800", fontSize: 13, fontWeight: "700" },
   biometricBtn: {
     marginTop: 14,
-    borderRadius: 14,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#ffdbc9",
     paddingVertical: 14,
@@ -359,6 +420,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff"
   },
   biometricText: { color: "#a33800", fontWeight: "700", fontSize: 15 },
-  footerText: { marginTop: 14, textAlign: "center", color: "#805032", fontSize: 13 },
+  footerText: { marginTop: 18, textAlign: "center", color: "#805032", fontSize: 13 },
   footerLink: { color: "#a33800", fontWeight: "700" }
 });

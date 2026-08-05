@@ -41,12 +41,14 @@ export type CartItem = {
   id: string;
   menuItemId: string;
   name: string;
+  basePrice?: number;
   price: number;
   imageUrl: string;
   quantity: number;
   userId: string;
   restaurantId: string;
   restaurantName: string;
+  customizations?: { label: string; value: string; extraCost: number }[];
 };
 
 export type OrderStatus = "pending_payment" | "confirmed" | "preparing" | "on_delivery" | "delivered" | "cancelled";
@@ -54,9 +56,11 @@ export type OrderStatus = "pending_payment" | "confirmed" | "preparing" | "on_de
 export type OrderItem = {
   menuItemId: string;
   name: string;
+  basePrice?: number;
   price: number;
   imageUrl: string;
   quantity: number;
+  customizations?: { label: string; value: string; extraCost: number }[];
 };
 
 export type Order = {
@@ -107,6 +111,41 @@ export type FirestoreUserProfile = {
   avatarUri: string;
   updatedAt: Date | null;
 };
+
+export type StoredPaymentMethod = {
+  id: string;
+  type: "card";
+  label: string;
+  brand: string;
+  last4: string;
+  expiry: string;
+  isDefault: boolean;
+  createdAtIso: string;
+};
+
+export type PaymentPreferences = {
+  wallet: "apple" | "google";
+  methods: StoredPaymentMethod[];
+};
+
+function normalizePaymentPreferences(data: unknown): PaymentPreferences {
+  const raw = data as Partial<PaymentPreferences> | undefined;
+  const methods = Array.isArray(raw?.methods)
+    ? raw.methods.filter((m): m is StoredPaymentMethod =>
+        Boolean(
+          m &&
+          m.type === "card" &&
+          typeof m.id === "string" &&
+          typeof m.last4 === "string" &&
+          typeof m.expiry === "string"
+        )
+      )
+    : [];
+  return {
+    wallet: raw?.wallet === "apple" ? "apple" : "google",
+    methods
+  };
+}
 
 // ─── Menu ─────────────────────────────────────────────────────────────────────
 
@@ -295,6 +334,74 @@ export function subscribeUserProfileFirestore(
 }
 
 // ─── Saved Addresses ─────────────────────────────────────────────────────────
+
+// Payment preferences live on the existing user document. Store masked card
+// metadata only; Paystack owns card charging and sensitive card data.
+export function subscribePaymentPreferences(
+  userId: string,
+  onData: (preferences: PaymentPreferences) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    doc(db, "users", userId),
+    (snap) => onData(normalizePaymentPreferences(snap.data()?.paymentPreferences)),
+    (err) => onError?.(err)
+  );
+}
+
+async function getPaymentPreferences(userId: string): Promise<PaymentPreferences> {
+  const snap = await getDoc(doc(db, "users", userId));
+  return normalizePaymentPreferences(snap.data()?.paymentPreferences);
+}
+
+async function savePaymentPreferences(userId: string, preferences: PaymentPreferences): Promise<void> {
+  await setDoc(doc(db, "users", userId), { paymentPreferences: preferences }, { merge: true });
+}
+
+export async function saveWalletPreference(userId: string, wallet: "apple" | "google"): Promise<void> {
+  const preferences = await getPaymentPreferences(userId);
+  await savePaymentPreferences(userId, { ...preferences, wallet });
+}
+
+export async function addStoredPaymentMethod(
+  userId: string,
+  input: Omit<StoredPaymentMethod, "id" | "type" | "isDefault" | "createdAtIso">
+): Promise<void> {
+  const preferences = await getPaymentPreferences(userId);
+  const methods = [...preferences.methods];
+  methods.push({
+    id: `card_${Date.now()}`,
+    type: "card",
+    ...input,
+    isDefault: methods.length === 0,
+    createdAtIso: new Date().toISOString()
+  });
+  await savePaymentPreferences(userId, { ...preferences, methods });
+}
+
+export async function setDefaultPaymentMethod(userId: string, methodId: string): Promise<void> {
+  const preferences = await getPaymentPreferences(userId);
+  await savePaymentPreferences(userId, {
+    ...preferences,
+    methods: preferences.methods.map((method) => ({
+      ...method,
+      isDefault: method.id === methodId
+    }))
+  });
+}
+
+export async function deleteStoredPaymentMethod(userId: string, methodId: string): Promise<void> {
+  const preferences = await getPaymentPreferences(userId);
+  const remaining = preferences.methods.filter((method) => method.id !== methodId);
+  const hasDefault = remaining.some((method) => method.isDefault);
+  await savePaymentPreferences(userId, {
+    ...preferences,
+    methods: remaining.map((method, index) => ({
+      ...method,
+      isDefault: hasDefault ? method.isDefault : index === 0
+    }))
+  });
+}
 
 export type SavedAddress = {
   id: string;

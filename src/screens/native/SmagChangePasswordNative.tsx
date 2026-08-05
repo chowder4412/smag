@@ -1,6 +1,8 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +13,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
+import { firebaseUpdatePassword, getFirebaseAuthErrorMessage } from "@/lib/firebase/auth";
+import { validatePassword } from "@/lib/validation";
 
 const heroImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuClabG9xn7-NLjp83gp9Da86YPZN2m7irL4MiPLQAqUrD9rXBtTBF0QvyhuxYYXf2IO283FzmJre7eIFSEu4fXXJuDyQAIKLamLqIRiOMn_KOX9bqQKm_SeMUM-_T-OjCGIMVp6CRffvwyZAB0q2QOR5bcZWwgy-ivCKE1PkUQ0iX7mjqgHuwFBDXzmvIz2qLawm-35vuI74k0OYoLH-3D15aUc2h3eVrTOs2MRzDc3bA1zSqvdzIz-lsMqr-7guUmGnzcow7aXXkXS";
@@ -23,6 +27,41 @@ export function SmagChangePasswordNative() {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNext, setShowNext] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function handleUpdatePassword() {
+    setError(null);
+    const passwordError = validatePassword(nextPass);
+    if (!current) {
+      setError("Enter your current password.");
+      return;
+    }
+    if (passwordError) {
+      setError(passwordError);
+      return;
+    }
+    if (nextPass !== confirm) {
+      setError("New password and confirmation do not match.");
+      return;
+    }
+    if (current === nextPass) {
+      setError("Choose a new password that is different from your current password.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await firebaseUpdatePassword(current, nextPass);
+      Alert.alert("Password updated", "Your password has been changed successfully.", [
+        { text: "OK", onPress: () => router.replace("/smag_settings") }
+      ]);
+    } catch (err) {
+      setError(getFirebaseAuthErrorMessage(err));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -70,10 +109,17 @@ export function SmagChangePasswordNative() {
             account safe and secure.
           </Text>
         </View>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <Pressable style={styles.updateBtn} onPress={() => router.push("/smag_settings")}>
-          <Text style={styles.updateText}>Update Password</Text>
-          <MaterialIcons name="lock-reset" size={18} color="#ffefeb" />
+        <Pressable style={[styles.updateBtn, saving && { opacity: 0.6 }]} onPress={handleUpdatePassword} disabled={saving}>
+          {saving ? (
+            <ActivityIndicator color="#ffefeb" />
+          ) : (
+            <>
+              <Text style={styles.updateText}>Update Password</Text>
+              <MaterialIcons name="lock-reset" size={18} color="#ffefeb" />
+            </>
+          )}
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -144,6 +190,7 @@ const styles = StyleSheet.create({
     gap: 8
   },
   infoText: { flex: 1, color: "#805032", fontSize: 12, lineHeight: 17 },
+  errorText: { color: "#b31b25", fontSize: 13, fontWeight: "700", textAlign: "center" },
   updateBtn: {
     marginTop: 4,
     borderRadius: 999,

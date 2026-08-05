@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppImage } from "@/components/AppImage";
@@ -17,6 +18,9 @@ const avatar =
 
 export function SmagPromotionsDealsNative() {
   const router = useAppRouter();
+  const copyCode = async (code: string) => {
+    await Clipboard.setStringAsync(code);
+  };
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -74,7 +78,7 @@ export function SmagPromotionsDealsNative() {
           badge="₦15,000 OFF"
           code="HELLO-SMAG"
           button="Copy Code"
-          onPress={() => router.push("/smag_my_cart")}
+          onPress={() => void copyCode("HELLO-SMAG")}
         />
         <OfferCard
           image={sushi}
@@ -93,7 +97,7 @@ export function SmagPromotionsDealsNative() {
           badge="FREE RIDE"
           code="FREE-RIDE"
           button="Copy Code"
-          onPress={() => router.push("/smag_my_cart")}
+          onPress={() => void copyCode("FREE-RIDE")}
         />
       </ScrollView>
     </SafeAreaView>

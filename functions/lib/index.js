@@ -615,7 +615,7 @@ exports.checkAppVersion = (0, https_1.onCall)(async (request) => {
 });
 // ─── Approve Driver Application ──────────────────────────────────────────────
 exports.approveDriverApplication = (0, https_1.onCall)(async (request) => {
-    var _a, _b;
+    var _a;
     if (!((_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid))
         throw new https_1.HttpsError("unauthenticated", "Must be signed in.");
     await assertAdminOrSubAdmin(request.auth.uid);
@@ -635,7 +635,7 @@ exports.approveDriverApplication = (0, https_1.onCall)(async (request) => {
         const existing = await admin.auth().getUserByEmail(application.email);
         uid = existing.uid;
     }
-    catch (_c) {
+    catch (_b) {
         const created = await admin.auth().createUser({ email: application.email, displayName: application.name });
         uid = created.uid;
     }
@@ -678,7 +678,7 @@ exports.approveDriverApplication = (0, https_1.onCall)(async (request) => {
     await appRef.update({ status: "approved", uid, approvedAtIso: new Date().toISOString() });
     // Send setup email
     const setupLink = await admin.auth().generatePasswordResetLink(application.email, {
-        url: (_b = process.env.SMAG_BUSINESS_APP_URL) !== null && _b !== void 0 ? _b : "smag-business://setup"
+        url: (process.env.SMAG_BUSINESS_APP_URL && process.env.SMAG_BUSINESS_APP_URL.startsWith("http")) ? process.env.SMAG_BUSINESS_APP_URL : "https://smag-12fe9.firebaseapp.com/setup"
     });
     await db.collection("mail").add({
         to: application.email,
@@ -736,7 +736,7 @@ exports.rejectDriverApplication = (0, https_1.onCall)(async (request) => {
 // Called from admin when an employee is added.
 // Creates a Firebase Auth password-reset link (acts as setup link) and emails it.
 exports.sendEmployeeInvite = (0, https_1.onCall)(async (request) => {
-    var _a, _b;
+    var _a;
     if (!((_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid))
         throw new https_1.HttpsError("unauthenticated", "Must be signed in.");
     await assertAdminOrSubAdmin(request.auth.uid);
@@ -749,7 +749,7 @@ exports.sendEmployeeInvite = (0, https_1.onCall)(async (request) => {
         const existing = await admin.auth().getUserByEmail(email);
         uid = existing.uid;
     }
-    catch (_c) {
+    catch (_b) {
         const created = await admin.auth().createUser({ email, displayName: name });
         uid = created.uid;
     }
@@ -773,7 +773,7 @@ exports.sendEmployeeInvite = (0, https_1.onCall)(async (request) => {
     }
     // Generate password setup link
     const setupLink = await admin.auth().generatePasswordResetLink(email, {
-        url: (_b = process.env.SMAG_BUSINESS_APP_URL) !== null && _b !== void 0 ? _b : "smag-business://setup"
+        url: (process.env.SMAG_BUSINESS_APP_URL && process.env.SMAG_BUSINESS_APP_URL.startsWith("http")) ? process.env.SMAG_BUSINESS_APP_URL : "https://smag-12fe9.firebaseapp.com/setup"
     });
     // Send email via Firebase Extensions (Trigger Email) or fallback log
     await db.collection("mail").add({
@@ -803,7 +803,7 @@ exports.sendEmployeeInvite = (0, https_1.onCall)(async (request) => {
 // Approves a pending kitchen, creates their Firebase Auth account,
 // sends them a password setup link, and marks them as approved.
 exports.approveKitchenApplication = (0, https_1.onCall)(async (request) => {
-    var _a, _b;
+    var _a;
     if (!((_a = request.auth) === null || _a === void 0 ? void 0 : _a.uid))
         throw new https_1.HttpsError("unauthenticated", "Must be signed in.");
     await assertAdminOrSubAdmin(request.auth.uid);
@@ -824,7 +824,7 @@ exports.approveKitchenApplication = (0, https_1.onCall)(async (request) => {
         const existing = await admin.auth().getUserByEmail(application.email);
         ownerUid = existing.uid;
     }
-    catch (_c) {
+    catch (_b) {
         const created = await admin.auth().createUser({
             email: application.email,
             displayName: application.ownerName
@@ -871,7 +871,7 @@ exports.approveKitchenApplication = (0, https_1.onCall)(async (request) => {
     });
     // Generate password setup link
     const setupLink = await admin.auth().generatePasswordResetLink(application.email, {
-        url: (_b = process.env.SMAG_BUSINESS_APP_URL) !== null && _b !== void 0 ? _b : "smag-business://setup"
+        url: (process.env.SMAG_BUSINESS_APP_URL && process.env.SMAG_BUSINESS_APP_URL.startsWith("http")) ? process.env.SMAG_BUSINESS_APP_URL : "https://smag-12fe9.firebaseapp.com/setup"
     });
     // Send approval email
     await db.collection("mail").add({

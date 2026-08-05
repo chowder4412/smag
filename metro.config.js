@@ -4,6 +4,17 @@ const { getDefaultConfig } = require("expo/metro-config");
 
 const config = getDefaultConfig(__dirname);
 
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Ignore backend node_modules and project-root build outputs to speed up Metro
+config.resolver.blockList = [
+  new RegExp("^" + escapeRegExp(path.join(__dirname, "functions", "node_modules")) + ".*"),
+  new RegExp("^" + escapeRegExp(path.join(__dirname, ".firebase")) + ".*"),
+  new RegExp("^" + escapeRegExp(path.join(__dirname, "dist")) + ".*"),
+];
+
 const idbEsmEntry = path.join(__dirname, "node_modules", "idb", "build", "index.js");
 const idbCjsEntry = path.join(__dirname, "node_modules", "idb", "build", "index.cjs");
 

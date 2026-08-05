@@ -1,15 +1,21 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   getAuth,
+  getReactNativePersistence,
   GoogleAuthProvider,
+  initializeAuth,
   OAuthProvider,
   onAuthStateChanged,
   PhoneAuthProvider,
+  reauthenticateWithCredential,
   sendPasswordResetEmail,
   signInWithCredential,
   signInWithEmailAndPassword,
   signOut,
+  updatePassword,
   updateProfile,
   type User
 } from "firebase/auth";
@@ -17,7 +23,16 @@ import {
 import { firebaseConfig } from "./config";
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
-export const auth = getAuth(app);
+
+export const auth = (() => {
+  try {
+    return initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage)
+    });
+  } catch {
+    return getAuth(app);
+  }
+})();
 
 let authReadyPromise: Promise<User | null> | null = null;
 
@@ -81,6 +96,10 @@ export async function firebaseSignInWithGoogle(idToken: string): Promise<User> {
 }
 
 export async function firebaseSignInWithGoogleNative(): Promise<User> {
+  const Constants = (await import("expo-constants")).default;
+  if (Constants.appOwnership === "expo") {
+    throw new Error("Google Sign-In is not supported in Expo Go.");
+  }
   const { GoogleSignin } = await import("@react-native-google-signin/google-signin");
   const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
   if (!clientId) throw new Error("EXPO_PUBLIC_GOOGLE_CLIENT_ID is not set.");
@@ -120,6 +139,16 @@ export async function firebaseSendPasswordReset(email: string): Promise<void> {
   await sendPasswordResetEmail(auth, email);
 }
 
+export async function firebaseUpdatePassword(currentPassword: string, nextPassword: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user?.email) {
+    throw new Error("You need to sign in with email before changing your password.");
+  }
+  const credential = EmailAuthProvider.credential(user.email, currentPassword);
+  await reauthenticateWithCredential(user, credential);
+  await updatePassword(user, nextPassword);
+}
+
 export async function firebaseSignOut(): Promise<void> {
   await signOut(auth);
 }
@@ -135,7 +164,8 @@ const ERROR_MAP: Record<string, string> = {
   "auth/weak-password": "Password is too weak. Use at least 8 characters.",
   "auth/too-many-requests": "Too many attempts. Please try again later.",
   "auth/invalid-verification-code": "Invalid OTP code. Please try again.",
-  "auth/code-expired": "OTP code has expired. Please request a new one."
+  "auth/code-expired": "OTP code has expired. Please request a new one.",
+  "auth/requires-recent-login": "Please sign in again before changing your password."
 };
 
 type FirebaseErrorLike = { code?: string; message?: string };

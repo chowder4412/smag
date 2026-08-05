@@ -69,9 +69,11 @@ export function SmagCheckoutNative() {
         items: cartItems.map((i) => ({
           menuItemId: i.menuItemId,
           name: i.name,
+          basePrice: i.basePrice,
           price: i.price,
           imageUrl: i.imageUrl,
-          quantity: i.quantity
+          quantity: i.quantity,
+          customizations: i.customizations ?? []
         })),
         subtotal,
         deliveryFee: DELIVERY_FEE,
@@ -181,7 +183,14 @@ export function SmagCheckoutNative() {
               {cartItems.map((item) => (
                 <View key={item.id} style={styles.orderRow}>
                   <AppImage source={{ uri: item.imageUrl }} style={styles.orderImage} />
-                  <Text style={styles.orderName}>{item.quantity}x {item.name}</Text>
+                  <View style={styles.orderTextWrap}>
+                    <Text style={styles.orderName}>{item.quantity}x {item.name}</Text>
+                    {item.customizations?.length ? (
+                      <Text style={styles.orderCustoms} numberOfLines={2}>
+                        {item.customizations.map((c) => c.value).join(" • ")}
+                      </Text>
+                    ) : null}
+                  </View>
                   <Text style={styles.orderPrice}>₦{(item.price * item.quantity).toLocaleString()}</Text>
                 </View>
               ))}
@@ -253,7 +262,9 @@ const styles = StyleSheet.create({
   secureText: { color: "#805032", fontSize: 11 },
   orderRow: { marginTop: 10, flexDirection: "row", alignItems: "center", gap: 10 },
   orderImage: { width: 48, height: 48, borderRadius: 10 },
-  orderName: { flex: 1, color: "#4b240a", fontWeight: "700" },
+  orderTextWrap: { flex: 1 },
+  orderName: { color: "#4b240a", fontWeight: "700" },
+  orderCustoms: { color: "#805032", fontSize: 11, marginTop: 2, lineHeight: 15 },
   orderPrice: { color: "#a33800", fontWeight: "800" },
   divider: { marginTop: 10, marginBottom: 8, height: 1, backgroundColor: "rgba(160,106,74,0.28)" },
   totalRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 7 },
