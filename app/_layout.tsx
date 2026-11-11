@@ -18,6 +18,7 @@ import {
   addNotificationResponseListener,
   registerForPushNotifications
 } from "@/lib/notifications";
+import { SmagLoadingScreen } from "@/components/SmagSpinner";
 
 (Text as unknown as { defaultProps: Record<string, unknown> }).defaultProps =
   (Text as unknown as { defaultProps: Record<string, unknown> }).defaultProps ?? {};
@@ -29,7 +30,7 @@ import {
 
 const PUBLIC_SCREENS = new Set([
   "smag_login", "smag_sign_up", "smag_forgot_password",
-  "smag_reset_link_sent", "smag_phone_auth", "smag_welcome"
+  "smag_reset_link_sent", "smag_phone_auth", "smag_welcome", "smag_splash"
 ]);
 
 function AuthGuard({ onReady }: { onReady: () => void }) {
@@ -148,9 +149,7 @@ function ThemedRootLayout() {
       <NetworkBanner />
       <AuthGuard onReady={onAuthReady} />
       {!authReady ? (
-        <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: "center", alignItems: "center" }}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
+        <SmagLoadingScreen />
       ) : (
         <Stack
           screenOptions={{

@@ -14,10 +14,13 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { getCurrentUser } from "@/lib/firebase/auth";
-import { clearCart, createOrder, getCartItems, subscribeAddresses, type CartItem } from "@/lib/firebase/firestore";
+import { clearCart, getCartItems, subscribeAddresses, type CartItem } from "@/lib/firebase/firestore";
 import { getUserProfile } from "@/lib/userProfile";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
+
+import { getApp } from "firebase/app";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 const DELIVERY_FEE = 2990;
 const SERVICE_FEE = 1500;
@@ -61,29 +64,27 @@ export function SmagCheckoutNative() {
     setPlacing(true);
 
     try {
-      // 1. Create order in Firestore (status: pending_payment)
-      const orderId = await createOrder({
-        userId: user.uid,
+      const functions = getFunctions(getApp(), "us-central1");
+      const createVerifiedOrderFn = httpsCallable<
+        object,
+        { orderId: string; total: number; subtotal: number }
+      >(functions, "createVerifiedOrder");
+
+      const result = await createVerifiedOrderFn({
         restaurantId: cartItems[0]?.restaurantId ?? "lartiste",
         restaurantName: cartItems[0]?.restaurantName ?? "L'Artiste Bistro",
         items: cartItems.map((i) => ({
           menuItemId: i.menuItemId,
           name: i.name,
-          basePrice: i.basePrice,
-          price: i.price,
-          imageUrl: i.imageUrl,
           quantity: i.quantity,
           customizations: i.customizations ?? []
         })),
-        subtotal,
-        deliveryFee: DELIVERY_FEE,
-        serviceFee: SERVICE_FEE,
-        total,
-        status: paymentMethod === "cash" ? "confirmed" : "pending_payment",
         deliveryAddress,
         deliveryInstructions,
-        paymentMethod: paymentMethod === "cash" ? "Cash on Delivery" : "Paystack"
+        paymentMethod
       });
+
+      const { orderId, total: orderTotal } = result.data;
 
       if (paymentMethod === "cash") {
         await clearCart(user.uid);
@@ -92,11 +93,11 @@ export function SmagCheckoutNative() {
         return;
       }
 
-      // 2. Navigate to native payment screen
-      router.push(`/smag_payment?orderId=${orderId}&amount=${total}&email=${encodeURIComponent(userEmail || user.email || '')}`);
+      // Navigate to native payment screen with verified total
+      router.push(`/smag_payment?orderId=${orderId}&amount=${orderTotal}&email=${encodeURIComponent(userEmail || user.email || "")}`);
     } catch (err: unknown) {
       const e = err as { message?: string };
-      Alert.alert("Payment Error", e.message ?? "Something went wrong. Please try again.");
+      Alert.alert("Order Verification Failed", e.message ?? "Something went wrong verifying your order. Please try again.");
       setPlacing(false);
     }
   }
@@ -111,7 +112,9 @@ export function SmagCheckoutNative() {
             </Pressable>
             <Image source={require("../../../assets/smag_logo.png")} style={styles.brand} resizeMode="contain" />
           </View>
-          <AppImage source={{ uri: avatarUri }} style={styles.avatar} />
+          <Pressable onPress={() => router.push("/smag_profile")} accessibilityRole="button" accessibilityLabel="View profile">
+            <AppImage source={{ uri: avatarUri }} style={styles.avatar} />
+          </Pressable>
         </View>
 
         <Text style={styles.title}>Checkout</Text>
@@ -212,11 +215,11 @@ export function SmagCheckoutNative() {
           {placing
             ? <ActivityIndicator color="#ffefeb" />
             : <>
-                <MaterialIcons name={paymentMethod === "paystack" ? "lock" : "payments"} size={18} color="#ffefeb" />
-                <Text style={styles.placeText}>
-                  {paymentMethod === "paystack" ? `Pay ₦${total.toLocaleString()}` : "Place Order (Cash)"}
-                </Text>
-              </>}
+              <MaterialIcons name={paymentMethod === "paystack" ? "lock" : "payments"} size={18} color="#ffefeb" />
+              <Text style={styles.placeText}>
+                {paymentMethod === "paystack" ? `Pay ₦${total.toLocaleString()}` : "Place Order (Cash)"}
+              </Text>
+            </>}
         </Pressable>
       </ScrollView>
     </SafeAreaView>

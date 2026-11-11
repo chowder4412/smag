@@ -20,6 +20,8 @@ jest.mock("expo-haptics", () => ({
 const mockChargeCard = jest.fn();
 const mockSubmitChallenge = jest.fn();
 const mockCancelOrder = jest.fn();
+const mockInitiatePayment = jest.fn();
+const mockVerifyPayment = jest.fn();
 
 jest.mock("firebase/functions", () => ({
   getFunctions: jest.fn(),
@@ -27,6 +29,8 @@ jest.mock("firebase/functions", () => ({
     if (name === "chargeCard") return mockChargeCard;
     if (name === "submitChargeChallenge") return mockSubmitChallenge;
     if (name === "cancelPendingOrder") return mockCancelOrder;
+    if (name === "initiatePayment") return mockInitiatePayment;
+    if (name === "verifyPayment") return mockVerifyPayment;
     return jest.fn();
   }
 }));
@@ -40,6 +44,8 @@ describe("SmagPaymentNative", () => {
     mockChargeCard.mockReset();
     mockSubmitChallenge.mockReset();
     mockCancelOrder.mockReset();
+    mockInitiatePayment.mockReset();
+    mockVerifyPayment.mockReset();
   });
 
   it("renders the amount and card form", () => {
@@ -47,6 +53,33 @@ describe("SmagPaymentNative", () => {
     expect(getByText("₦14,490")).toBeTruthy();
     expect(getByPlaceholderText("0000 0000 0000 0000")).toBeTruthy();
     expect(getByPlaceholderText("MM/YY")).toBeTruthy();
+  });
+
+  it("renders Paystack secure checkout option", () => {
+    const { getByText } = render(<SmagPaymentNative />);
+    expect(getByText("Paystack Secure Checkout")).toBeTruthy();
+    expect(getByText("Pay with Paystack (Instant)")).toBeTruthy();
+  });
+
+  it("initiates Paystack hosted checkout on press", async () => {
+    mockInitiatePayment.mockResolvedValue({
+      data: {
+        access_code: "acc_123",
+        authorization_url: "https://checkout.paystack.com/acc_123",
+        reference: "ref_123"
+      }
+    });
+
+    const { getByText } = render(<SmagPaymentNative />);
+    fireEvent.press(getByText("Pay with Paystack (Instant)"));
+
+    await waitFor(() => {
+      expect(mockInitiatePayment).toHaveBeenCalledWith({
+        orderId: "order-1",
+        email: "chef@smag.com",
+        amountKobo: 1449000
+      });
+    });
   });
 
   it("shows alert for incomplete card details", async () => {

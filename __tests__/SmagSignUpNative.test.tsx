@@ -10,6 +10,7 @@ const mockRouter = {
 };
 
 const mockFirebaseSignUp = jest.fn();
+const mockFirebaseSignInWithGoogleNative = jest.fn();
 const mockMarkOnboardingPending = jest.fn();
 const mockUpdateUserProfile = jest.fn();
 
@@ -19,6 +20,7 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/lib/firebase/auth", () => ({
   firebaseSignUp: (...args: unknown[]) => mockFirebaseSignUp(...args),
+  firebaseSignInWithGoogleNative: (...args: unknown[]) => mockFirebaseSignInWithGoogleNative(...args),
   getFirebaseAuthErrorMessage: () => "Sign-up failed"
 }));
 
@@ -107,6 +109,20 @@ describe("SmagSignUpNative", () => {
     await waitFor(() => {
       expect(mockFirebaseSignUp).toHaveBeenCalledWith("alex@smag.com", "password123", "Alex Thompson");
       expect(mockUpdateUserProfile).toHaveBeenCalled();
+      expect(mockMarkOnboardingPending).toHaveBeenCalled();
+      expect(mockRouter.replace).toHaveBeenCalledWith("/smag_welcome");
+    });
+  });
+
+  it("signs up with Google and navigates to welcome screen", async () => {
+    mockFirebaseSignInWithGoogleNative.mockResolvedValue({ uid: "google-signup-user" });
+    mockMarkOnboardingPending.mockResolvedValue(undefined);
+
+    const { getByText } = render(<SmagSignUpNative />);
+    fireEvent.press(getByText("Google"));
+
+    await waitFor(() => {
+      expect(mockFirebaseSignInWithGoogleNative).toHaveBeenCalled();
       expect(mockMarkOnboardingPending).toHaveBeenCalled();
       expect(mockRouter.replace).toHaveBeenCalledWith("/smag_welcome");
     });

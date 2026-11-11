@@ -140,8 +140,11 @@ export function SmagLoginNative() {
   }
 
   async function handleGoogleSignIn() {
-    if (Constants.appOwnership === "expo") {
-      Alert.alert("Not Available", "Google Sign-In requires a development build and is not supported in Expo Go.");
+    if (Platform.OS !== "web" && Constants.appOwnership === "expo") {
+      Alert.alert(
+        "Development Build Required",
+        "Google Sign-In on mobile requires a development build (npx expo run:android / eas build) or web mode (npx expo start --web). Native Google modules are not supported inside Expo Go."
+      );
       return;
     }
     setSocialLoading("google");

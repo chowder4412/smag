@@ -62,6 +62,12 @@
     "plugins": [
       "expo-web-browser",
       [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.96147639067-8gd1vppugrrntor6fdlk5l1hhr30sc13"
+        }
+      ],
+      [
         "expo-local-authentication",
         {
           "faceIDPermission": "Allow Smag to use Face ID for secure sign-in."

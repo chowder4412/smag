@@ -1,0 +1,90 @@
+{
+  "project_info": {
+    "project_number": "96147639067",
+    "project_id": "smag-12fe9",
+    "storage_bucket": "smag-12fe9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:96147639067:android:ced85a8da9f8d4d76ca1be",
+        "android_client_info": {
+          "package_name": "com.smag.business"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "96147639067-mreaqpu0ocepf1t2cb2lo2vu94ku27is.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMt442FZzCvr5iVy3B7aolGlr-ETCrJIQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "96147639067-mreaqpu0ocepf1t2cb2lo2vu94ku27is.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "96147639067-8gd1vppugrrntor6fdlk5l1hhr30sc13.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.smag.mobile"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:96147639067:android:c974bdfb3c9fc7cc6ca1be",
+        "android_client_info": {
+          "package_name": "com.smag.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "96147639067-ilg4u6a1pad5gq99tm10j8ij98te0s5q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.smag.mobile",
+            "certificate_hash": "d3812e43fac273fb6aa754b550aa704217f6c0e7"
+          }
+        },
+        {
+          "client_id": "96147639067-mreaqpu0ocepf1t2cb2lo2vu94ku27is.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBMt442FZzCvr5iVy3B7aolGlr-ETCrJIQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "96147639067-mreaqpu0ocepf1t2cb2lo2vu94ku27is.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "96147639067-8gd1vppugrrntor6fdlk5l1hhr30sc13.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.smag.mobile"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

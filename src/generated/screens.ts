@@ -29,6 +29,7 @@ const SCREEN_META: ReferenceScreen[] = [
   { id: "smag_saved_addresses", folder: "smag_saved_addresses", title: "Saved Addresses", imagePath: "smag_saved_addresses/screen.png", imageBytes: 156230 },
   { id: "smag_settings", folder: "smag_settings", title: "Settings", imagePath: "smag_settings/screen.png", imageBytes: 143210 },
   { id: "smag_sign_up", folder: "smag_sign_up", title: "Sign Up - Smag", imagePath: "smag_sign_up/screen.png", imageBytes: 289450 },
+  { id: "smag_splash", folder: "smag_splash", title: "Splash - Smag", imagePath: "smag_splash/screen.png", imageBytes: 0 },
   { id: "smag_phone_auth", folder: "smag_phone_auth", title: "Phone Sign-In", imagePath: "smag_phone_auth/screen.png", imageBytes: 0 },
   { id: "smag_support_help", folder: "smag_support_help", title: "Support & Help", imagePath: "smag_support_help/screen.png", imageBytes: 120000 },
   { id: "smag_track_order", folder: "smag_track_order", title: "Track Order", imagePath: "smag_track_order/screen.png", imageBytes: 198760 },

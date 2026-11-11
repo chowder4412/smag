@@ -358,13 +358,29 @@ service cloud.firestore {
       );
       allow create: if isSignedIn()
         && request.auth.uid == request.resource.data.userId
-        && request.resource.data.status in ["confirmed", "pending_payment"];
+        && request.resource.data.status == "pending_payment";
       allow update: if isSignedIn()
         && request.auth.uid == resource.data.userId
         && request.resource.data.userId == resource.data.userId
+        && request.resource.data.total == resource.data.total
+        && request.resource.data.subtotal == resource.data.subtotal
+        && request.resource.data.deliveryFee == resource.data.deliveryFee
+        && request.resource.data.serviceFee == resource.data.serviceFee
+        && request.resource.data.restaurantId == resource.data.restaurantId
         && request.resource.data.status == resource.data.status
         && request.resource.data.paymentStatus == resource.data.paymentStatus
-        && request.resource.data.paymentReference == resource.data.paymentReference;
+        && request.resource.data.paymentReference == resource.data.paymentReference
+        && (!("driverLat" in request.resource.data) || request.resource.data.driverLat == resource.data.driverLat)
+        && (!("driverLng" in request.resource.data) || request.resource.data.driverLng == resource.data.driverLng)
+        && (!("assignedDriverUid" in request.resource.data) || request.resource.data.assignedDriverUid == resource.data.assignedDriverUid);
+
+      match /telemetry/{docId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && (
+          hasAdminProfile()
+          || isDriverEmployee()
+        );
+      }
     }
 
     match /payments/{paymentId} {

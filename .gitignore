@@ -32,3 +32,9 @@ android/app/release.keystore
 
 # Junk files
 nul
+
+# Secrets and credentials
+smtp_pass.txt
+*secret*
+*credential*
+

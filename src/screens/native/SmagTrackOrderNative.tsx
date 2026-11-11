@@ -7,7 +7,8 @@ import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from "react-native-maps";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { getApp } from "firebase/app";
 
-import { subscribeOrder, type Order, type OrderStatus } from "@/lib/firebase/firestore";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db, subscribeOrder, type Order, type OrderStatus } from "@/lib/firebase/firestore";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
 
@@ -75,7 +76,27 @@ export function SmagTrackOrderNative() {
     });
   }, [order?.status, deliveredHandled, orderId]);
 
-  // Animate driver marker smoothly when coords update
+  // Listen to lightweight live telemetry stream
+  useEffect(() => {
+    if (!orderId) return;
+    const unsub = onSnapshot(doc(db, "orders", orderId, "telemetry", "live"), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data.latitude && data.longitude) {
+          const newLat = Number(data.latitude);
+          const newLng = Number(data.longitude);
+          Animated.parallel([
+            Animated.timing(driverLatAnim, { toValue: newLat, duration: 1500, useNativeDriver: false }),
+            Animated.timing(driverLngAnim, { toValue: newLng, duration: 1500, useNativeDriver: false })
+          ]).start();
+          setDriverCoord({ latitude: newLat, longitude: newLng });
+        }
+      }
+    }, () => {});
+    return unsub;
+  }, [orderId]);
+
+  // Fallback to order.driverLat / order.driverLng if telemetry doc not yet populated
   useEffect(() => {
     if (!order?.driverLat || !order?.driverLng) return;
     const newLat = order.driverLat;
@@ -86,7 +107,6 @@ export function SmagTrackOrderNative() {
       Animated.timing(driverLngAnim, { toValue: newLng, duration: 1500, useNativeDriver: false })
     ]).start();
 
-    // Update actual coord state after animation for Marker
     const id = setTimeout(() => setDriverCoord({ latitude: newLat, longitude: newLng }), 1500);
     return () => clearTimeout(id);
   }, [order?.driverLat, order?.driverLng]);

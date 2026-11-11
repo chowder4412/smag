@@ -1,5 +1,6 @@
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Crypto from "expo-crypto";
+import Constants from "expo-constants";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useState } from "react";
 import { ActivityIndicator, Alert, Image, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
@@ -85,13 +86,23 @@ export function SmagSignUpNative() {
   }
 
   async function handleGoogleSignUp() {
+    if (Platform.OS !== "web" && Constants.appOwnership === "expo") {
+      Alert.alert(
+        "Development Build Required",
+        "Google Sign-Up on mobile requires a development build (npx expo run:android / eas build) or web mode (npx expo start --web). Native Google modules are not supported inside Expo Go."
+      );
+      return;
+    }
     setSocialLoading("google");
     try {
       await firebaseSignInWithGoogleNative();
       await markOnboardingPending();
       router.replace("/smag_welcome");
-    } catch (err) { setFormError(getFirebaseAuthErrorMessage(err)); }
-    finally { setSocialLoading(null); }
+    } catch (err) {
+      setFormError(getFirebaseAuthErrorMessage(err));
+    } finally {
+      setSocialLoading(null);
+    }
   }
 
   async function handleAppleSignUp() {

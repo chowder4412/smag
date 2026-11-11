@@ -14,13 +14,17 @@ import {
   sendPasswordResetEmail,
   signInWithCredential,
   signInWithEmailAndPassword,
+  signInWithPopup,
   signOut,
   updatePassword,
   updateProfile,
   type User
 } from "firebase/auth";
+import { Platform } from "react-native";
+import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 
 import { firebaseConfig } from "./config";
+import { db } from "./firestore";
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
@@ -76,6 +80,39 @@ export async function forceTokenRefresh(): Promise<boolean> {
   }
 }
 
+export async function syncGoogleUserProfile(user: User): Promise<void> {
+  try {
+    const userRef = doc(db, "users", user.uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      await setDoc(userRef, {
+        uid: user.uid,
+        fullName: user.displayName || "Gourmet Guest",
+        email: user.email || "",
+        phone: user.phoneNumber || "",
+        birthday: "",
+        address: "",
+        avatarUri: user.photoURL || "",
+        role: "customer",
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+    } else {
+      const data = snap.data();
+      const updates: Record<string, unknown> = {};
+      if (!data?.avatarUri && user.photoURL) updates.avatarUri = user.photoURL;
+      if (!data?.fullName && user.displayName) updates.fullName = user.displayName;
+      if (!data?.email && user.email) updates.email = user.email;
+      if (Object.keys(updates).length > 0) {
+        updates.updatedAt = serverTimestamp();
+        await setDoc(userRef, updates, { merge: true });
+      }
+    }
+  } catch (err) {
+    console.warn("[syncGoogleUserProfile] Could not sync user profile:", err);
+  }
+}
+
 export async function firebaseSignUp(email: string, password: string, displayName?: string): Promise<User> {
   const credential = await createUserWithEmailAndPassword(auth, email, password);
   if (displayName?.trim()) {
@@ -89,28 +126,69 @@ export async function firebaseSignIn(email: string, password: string): Promise<U
   return credential.user;
 }
 
-export async function firebaseSignInWithGoogle(idToken: string): Promise<User> {
-  const credential = GoogleAuthProvider.credential(idToken);
+export async function firebaseSignInWithGoogle(idToken?: string): Promise<User> {
+  // If an explicit ID token was passed, use it directly (e.g. from a custom provider or test)
+  if (idToken) {
+    const credential = GoogleAuthProvider.credential(idToken);
+    const result = await signInWithCredential(auth, credential);
+    await syncGoogleUserProfile(result.user);
+    return result.user;
+  }
+
+  // Web environment: browser popup flow
+  if (Platform.OS === "web") {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: "select_account" });
+    const result = await signInWithPopup(auth, provider);
+    await syncGoogleUserProfile(result.user);
+    return result.user;
+  }
+
+  // Mobile environment: native Google Sign-In
+  const Constants = (await import("expo-constants")).default;
+  if (Constants.appOwnership === "expo") {
+    throw new Error(
+      "Google Sign-In on mobile requires a development build (run:android / eas build) or web test, as native Google Sign-In is not supported inside Expo Go."
+    );
+  }
+
+  const { GoogleSignin } = await import("@react-native-google-signin/google-signin");
+  const webClientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID ||
+    process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
+  const iosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID;
+
+  if (!webClientId) {
+    throw new Error("EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID is not configured.");
+  }
+
+  GoogleSignin.configure({
+    webClientId,
+    iosClientId: Platform.OS === "ios" ? iosClientId : undefined,
+    offlineAccess: false
+  });
+
+  if (Platform.OS === "android") {
+    await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+  }
+
+  const signInResult = await GoogleSignin.signIn();
+  const token =
+    signInResult.data?.idToken ||
+    (signInResult as unknown as { idToken?: string })?.idToken;
+
+  if (!token) {
+    throw new Error("Google Sign-In failed: no ID token returned.");
+  }
+
+  const credential = GoogleAuthProvider.credential(token);
   const result = await signInWithCredential(auth, credential);
+  await syncGoogleUserProfile(result.user);
   return result.user;
 }
 
 export async function firebaseSignInWithGoogleNative(): Promise<User> {
-  const Constants = (await import("expo-constants")).default;
-  if (Constants.appOwnership === "expo") {
-    throw new Error("Google Sign-In is not supported in Expo Go.");
-  }
-  const { GoogleSignin } = await import("@react-native-google-signin/google-signin");
-  const clientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID;
-  if (!clientId) throw new Error("EXPO_PUBLIC_GOOGLE_CLIENT_ID is not set.");
-  GoogleSignin.configure({ webClientId: clientId });
-  await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-  const signInResult = await GoogleSignin.signIn();
-  const idToken = signInResult.data?.idToken;
-  if (!idToken) throw new Error("Google Sign-In failed: no ID token returned.");
-  const credential = GoogleAuthProvider.credential(idToken);
-  const result = await signInWithCredential(auth, credential);
-  return result.user;
+  return firebaseSignInWithGoogle();
 }
 
 export async function firebaseSignInWithApple(identityToken: string, nonce: string): Promise<User> {
@@ -165,7 +243,15 @@ const ERROR_MAP: Record<string, string> = {
   "auth/too-many-requests": "Too many attempts. Please try again later.",
   "auth/invalid-verification-code": "Invalid OTP code. Please try again.",
   "auth/code-expired": "OTP code has expired. Please request a new one.",
-  "auth/requires-recent-login": "Please sign in again before changing your password."
+  "auth/requires-recent-login": "Please sign in again before changing your password.",
+  "auth/popup-closed-by-user": "Sign-in popup was closed before completing.",
+  "auth/popup-blocked": "Sign-in popup was blocked by your browser. Please allow popups.",
+  "auth/cancelled-popup-request": "Sign-in popup request was cancelled.",
+  "auth/account-exists-with-different-credential": "An account already exists with the same email using a different sign-in method.",
+  "auth/credential-already-in-use": "This account is already linked to another profile.",
+  "SIGN_IN_CANCELLED": "Sign-in was cancelled.",
+  "IN_PROGRESS": "Sign-in is already in progress.",
+  "PLAY_SERVICES_NOT_AVAILABLE": "Google Play Services is not available or outdated."
 };
 
 type FirebaseErrorLike = { code?: string; message?: string };

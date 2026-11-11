@@ -195,6 +195,188 @@ export const cancelPendingOrder = onCall(async (request) => {
   return { ok: true };
 });
 
+// ─── Create Verified Order (Server-Authoritative Pricing) ──────────────────────
+// Calculates canonical pricing from Firestore catalog to prevent client tampering.
+
+interface CreateVerifiedOrderItem {
+  menuItemId: string;
+  name?: string;
+  quantity: number;
+  customizations?: { label: string; value: string; extraCost?: number }[];
+}
+
+interface CreateVerifiedOrderData {
+  restaurantId: string;
+  restaurantName?: string;
+  items: CreateVerifiedOrderItem[];
+  deliveryAddress: string;
+  deliveryInstructions?: string;
+  paymentMethod: "paystack" | "cash";
+  promoCode?: string;
+}
+
+export const createVerifiedOrder = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Must be signed in to create an order.");
+  }
+
+  const {
+    restaurantId,
+    restaurantName,
+    items,
+    deliveryAddress,
+    deliveryInstructions,
+    paymentMethod,
+    promoCode
+  } = request.data as CreateVerifiedOrderData;
+
+  if (!restaurantId || !Array.isArray(items) || items.length === 0 || !deliveryAddress) {
+    throw new HttpsError("invalid-argument", "restaurantId, items, and deliveryAddress are required.");
+  }
+
+  let subtotal = 0;
+  const verifiedItems = [];
+
+  for (const item of items) {
+    if (!item.menuItemId || typeof item.quantity !== "number" || item.quantity <= 0) {
+      throw new HttpsError("invalid-argument", "Invalid item specification.");
+    }
+
+    let itemSnap = await db.collection("menu_items").doc(item.menuItemId).get();
+    if (!itemSnap.exists) {
+      itemSnap = await db.collection("external_menu_items").doc(item.menuItemId).get();
+    }
+    if (!itemSnap.exists) {
+      itemSnap = await db.collection("foods").doc(item.menuItemId).get();
+    }
+
+    if (!itemSnap.exists) {
+      throw new HttpsError("not-found", `Item ${item.menuItemId} is not available.`);
+    }
+
+    const itemData = itemSnap.data() as {
+      name: string;
+      price: number;
+      imageUrl?: string;
+      available?: boolean;
+      status?: string;
+      stock?: number;
+    };
+
+    if (itemData.available === false || itemData.status === "hidden") {
+      throw new HttpsError("failed-precondition", `"${itemData.name}" is currently unavailable.`);
+    }
+
+    if (typeof itemData.stock === "number" && itemData.stock < item.quantity) {
+      throw new HttpsError("failed-precondition", `Insufficient stock for "${itemData.name}".`);
+    }
+
+    const basePrice = Number(itemData.price) || 0;
+    let extraCost = 0;
+    const verifiedCustomizations = [];
+
+    if (Array.isArray(item.customizations)) {
+      for (const cust of item.customizations) {
+        const cost = Number(cust.extraCost) || 0;
+        extraCost += cost;
+        verifiedCustomizations.push({
+          label: String(cust.label || ""),
+          value: String(cust.value || ""),
+          extraCost: cost
+        });
+      }
+    }
+
+    const unitPrice = basePrice + extraCost;
+    const lineTotal = unitPrice * item.quantity;
+    subtotal += lineTotal;
+
+    verifiedItems.push({
+      menuItemId: item.menuItemId,
+      name: itemData.name,
+      basePrice,
+      price: unitPrice,
+      imageUrl: itemData.imageUrl ?? "",
+      quantity: item.quantity,
+      customizations: verifiedCustomizations
+    });
+  }
+
+  let deliveryFee = 2990;
+  let resolvedRestaurantName = restaurantName ?? "Smag Kitchen";
+
+  const restaurantSnap = await db.collection("external_restaurants").doc(restaurantId).get();
+  if (restaurantSnap.exists) {
+    const restData = restaurantSnap.data();
+    resolvedRestaurantName = restData?.name ?? resolvedRestaurantName;
+    if (typeof restData?.deliveryFee === "number" && restData.deliveryFee >= 0) {
+      deliveryFee = restData.deliveryFee;
+    }
+  }
+
+  const serviceFee = 1500;
+  let discount = 0;
+
+  if (promoCode && typeof promoCode === "string") {
+    const codeSnap = await db.collection("promo_codes").doc(promoCode.trim().toUpperCase()).get();
+    if (codeSnap.exists) {
+      const codeData = codeSnap.data();
+      if (codeData?.active !== false) {
+        if (codeData?.discountPercent) {
+          discount = Math.round((subtotal * Number(codeData.discountPercent)) / 100);
+        } else if (codeData?.discountAmount) {
+          discount = Number(codeData.discountAmount) || 0;
+        }
+      }
+    }
+  }
+
+  const total = Math.max(0, subtotal + deliveryFee + serviceFee - discount);
+  const status = paymentMethod === "cash" ? "confirmed" : "pending_payment";
+  const paymentStatus = paymentMethod === "cash" ? "unpaid" : "pending";
+
+  const orderDocRef = await db.collection("orders").add({
+    userId: request.auth.uid,
+    restaurantId,
+    restaurantName: resolvedRestaurantName,
+    items: verifiedItems,
+    subtotal,
+    deliveryFee,
+    serviceFee,
+    discount,
+    total,
+    status,
+    paymentStatus,
+    paymentMethod: paymentMethod === "cash" ? "Cash on Delivery" : "Paystack",
+    deliveryAddress,
+    deliveryInstructions: deliveryInstructions ?? "",
+    assignedDriverUid: "",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+
+  const userCarts = await db.collection("carts").where("userId", "==", request.auth.uid).get();
+  if (!userCarts.empty) {
+    const batch = db.batch();
+    userCarts.docs.forEach((d) => batch.delete(d.ref));
+    await batch.commit();
+  }
+
+  if (status === "confirmed") {
+    void sendNewOrderPush(orderDocRef.id, restaurantId).catch(() => {});
+  }
+
+  return {
+    orderId: orderDocRef.id,
+    subtotal,
+    deliveryFee,
+    serviceFee,
+    discount,
+    total,
+    status
+  };
+});
+
 // ─── Charge Card (Native) ─────────────────────────────────────────────────────
 // Charges a card directly via Paystack API — no WebView needed.
 
@@ -231,6 +413,13 @@ export const chargeCard = onCall(
     const orderDoc = await db.collection("orders").doc(orderId).get();
     if (!orderDoc.exists || orderDoc.data()?.userId !== request.auth.uid) {
       throw new HttpsError("permission-denied", "Order not found.");
+    }
+
+    // Verify payment amount matches canonical server total
+    const orderData = orderDoc.data();
+    const verifiedTotalKobo = Math.round((orderData?.total ?? 0) * 100);
+    if (verifiedTotalKobo > 0 && Math.abs(amountKobo - verifiedTotalKobo) > 5) {
+      throw new HttpsError("invalid-argument", "Payment amount mismatch with verified order total.");
     }
 
     const reference = `smag-${orderId}-${Date.now()}`;
@@ -357,6 +546,52 @@ export const submitChargeChallenge = onCall(
   }
 );
 
+// ─── Helper: Send New Order Push Notification to Kitchen ───────────────────────
+
+async function sendNewOrderPush(orderId: string, restaurantId?: string) {
+  const expoPushTokens: string[] = [];
+  const [staffSnap, ownerSnap] = await Promise.all([
+    db.collection("employees").where("status", "==", "active").get(),
+    restaurantId
+      ? db.collection("kitchen_owners").where("restaurantId", "==", restaurantId).limit(1).get()
+      : Promise.resolve(null)
+  ]);
+  staffSnap.docs.forEach(d => { if (d.data().pushToken) expoPushTokens.push(d.data().pushToken as string); });
+  ownerSnap?.docs.forEach(d => { if (d.data().pushToken) expoPushTokens.push(d.data().pushToken as string); });
+
+  if (expoPushTokens.length > 0) {
+    const pushTitle = "New Order! 🛎";
+    const pushBody = `Order #${orderId.slice(-6).toUpperCase()} is confirmed and ready to prepare.`;
+    const uniqueTokens = Array.from(new Set(expoPushTokens.filter(t => t && t.startsWith("ExponentPushToken"))));
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < uniqueTokens.length; i += CHUNK_SIZE) {
+      const chunk = uniqueTokens.slice(i, i + CHUNK_SIZE);
+      try {
+        const res = await axios.post(
+          "https://exp.host/--/api/v2/push/send",
+          chunk.map(token => ({ to: token, title: pushTitle, body: pushBody, data: { orderId }, sound: "default" })),
+          { headers: { "Content-Type": "application/json", Accept: "application/json" } }
+        );
+        const tickets = res.data?.data;
+        if (Array.isArray(tickets)) {
+          for (let idx = 0; idx < tickets.length; idx++) {
+            const ticket = tickets[idx];
+            if (ticket?.status === "error" && ticket?.details?.error === "DeviceNotRegistered") {
+              const deadToken = chunk[idx];
+              const empSnap = await db.collection("employees").where("pushToken", "==", deadToken).get();
+              empSnap.docs.forEach(d => void d.ref.update({ pushToken: admin.firestore.FieldValue.delete() }).catch(() => {}));
+              const koSnap = await db.collection("kitchen_owners").where("pushToken", "==", deadToken).get();
+              koSnap.docs.forEach(d => void d.ref.update({ pushToken: admin.firestore.FieldValue.delete() }).catch(() => {}));
+            }
+          }
+        }
+      } catch {
+        /* non-fatal — push delivery is best-effort */
+      }
+    }
+  }
+}
+
 // ─── Helper: Confirm Payment ──────────────────────────────────────────────────
 
 async function confirmPayment(orderId: string, reference: string, amountKobo: number, userId: string) {
@@ -392,6 +627,10 @@ async function confirmPayment(orderId: string, reference: string, amountKobo: nu
       createdAt: admin.firestore.FieldValue.serverTimestamp()
     })
   ]);
+
+  const orderDoc = await db.collection("orders").doc(orderId).get();
+  const restaurantId = orderDoc.data()?.restaurantId;
+  void sendNewOrderPush(orderId, restaurantId).catch(() => {});
 }
 
 // ─── Initiate Payment ─────────────────────────────────────────────────────────
@@ -415,6 +654,13 @@ export const initiatePayment = onCall(
     const orderDoc = await db.collection("orders").doc(orderId).get();
     if (!orderDoc.exists || orderDoc.data()?.userId !== request.auth.uid) {
       throw new HttpsError("permission-denied", "Order not found.");
+    }
+
+    // Verify payment amount matches canonical server total
+    const orderData = orderDoc.data();
+    const verifiedTotalKobo = Math.round((orderData?.total ?? 0) * 100);
+    if (verifiedTotalKobo > 0 && Math.abs(amountKobo - verifiedTotalKobo) > 5) {
+      throw new HttpsError("invalid-argument", "Payment amount mismatch with verified order total.");
     }
 
     try {
@@ -1300,11 +1546,33 @@ export const updateOrderStatus = onCall(async (request) => {
   if (expoPushTokens.length > 0) {
     const pushTitle = status === "confirmed" ? "New Order! 🛎" : "Order Ready for Pickup 🚀";
     const pushBody = `Order #${orderId.slice(-6).toUpperCase()} · ${statusMessages[status] ?? status}`;
-    await axios.post(
-      "https://exp.host/--/api/v2/push/send",
-      expoPushTokens.map(token => ({ to: token, title: pushTitle, body: pushBody, data: { orderId }, sound: "default" })),
-      { headers: { "Content-Type": "application/json", Accept: "application/json" } }
-    ).catch(() => { /* non-fatal — push delivery is best-effort */ });
+    const uniqueTokens = Array.from(new Set(expoPushTokens.filter(t => t && t.startsWith("ExponentPushToken"))));
+    const CHUNK_SIZE = 100;
+    for (let i = 0; i < uniqueTokens.length; i += CHUNK_SIZE) {
+      const chunk = uniqueTokens.slice(i, i + CHUNK_SIZE);
+      try {
+        const res = await axios.post(
+          "https://exp.host/--/api/v2/push/send",
+          chunk.map(token => ({ to: token, title: pushTitle, body: pushBody, data: { orderId }, sound: "default" })),
+          { headers: { "Content-Type": "application/json", Accept: "application/json" } }
+        );
+        const tickets = res.data?.data;
+        if (Array.isArray(tickets)) {
+          for (let idx = 0; idx < tickets.length; idx++) {
+            const ticket = tickets[idx];
+            if (ticket?.status === "error" && ticket?.details?.error === "DeviceNotRegistered") {
+              const deadToken = chunk[idx];
+              const empSnap = await db.collection("employees").where("pushToken", "==", deadToken).get();
+              empSnap.docs.forEach(d => void d.ref.update({ pushToken: admin.firestore.FieldValue.delete() }).catch(() => {}));
+              const koSnap = await db.collection("kitchen_owners").where("pushToken", "==", deadToken).get();
+              koSnap.docs.forEach(d => void d.ref.update({ pushToken: admin.firestore.FieldValue.delete() }).catch(() => {}));
+            }
+          }
+        }
+      } catch {
+        /* non-fatal — push delivery is best-effort */
+      }
+    }
   }
 
   return { ok: true };
@@ -1332,11 +1600,14 @@ export const updateDriverLocation = onCall(async (request) => {
     throw new HttpsError("permission-denied", "Only the assigned driver can broadcast location for this order.");
   }
 
-  await db.collection("orders").doc(orderId).update({
-    driverLat: latitude,
-    driverLng: longitude,
+  // Optimized telemetry write: stream directly to orders/{orderId}/telemetry/live
+  // This avoids mutating the main order document every 10s and eliminates document write contention.
+  await db.collection("orders").doc(orderId).collection("telemetry").doc("live").set({
+    driverUid: request.auth.uid,
+    latitude,
+    longitude,
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
-  });
+  }, { merge: true });
 
   return { ok: true };
 });

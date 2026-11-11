@@ -43,6 +43,7 @@ const nativeScreens: Record<string, ComponentType> = {
   smag_settings: lazyScreen(() => import("./SmagSettingsNative").then(m => ({ default: m.SmagSettingsNative }))),
   smag_sign_up: lazyScreen(() => import("./SmagSignUpNative").then(m => ({ default: m.SmagSignUpNative }))),
   smag_phone_auth: lazyScreen(() => import("./SmagPhoneAuthNative").then(m => ({ default: m.SmagPhoneAuthNative }))),
+  smag_splash: lazyScreen(() => import("./SmagSplashNative").then(m => ({ default: m.SmagSplashNative }))),
   smag_support_help: lazyScreen(() => import("./SmagSupportHelpNative").then(m => ({ default: m.SmagSupportHelpNative }))),
   smag_track_order: lazyScreen(() => import("./SmagTrackOrderNative").then(m => ({ default: m.SmagTrackOrderNative }))),
   smag_track_order_map: lazyScreen(() => import("./SmagTrackOrderMapNative").then(m => ({ default: m.SmagTrackOrderMapNative }))),

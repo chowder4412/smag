@@ -8,11 +8,22 @@ function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-// Ignore backend node_modules and project-root build outputs to speed up Metro
+// Ignore backend node_modules and project-root build outputs.
+// Anchored strictly to project root so vendor packages like react-native-web/dist are NOT blocked.
+const projectRoot = __dirname;
+const functionsNodeModules = path.join(projectRoot, "functions", "node_modules");
+const firebaseDir = path.join(projectRoot, ".firebase");
+const distDir = path.join(projectRoot, "dist");
+
+function toPathRegex(dirPath) {
+  const normalized = escapeRegExp(dirPath).replace(/\\\\|\//g, "[/\\\\]");
+  return new RegExp(`^${normalized}(?:[/\\\\].*)?$`, "i");
+}
+
 config.resolver.blockList = [
-  new RegExp("^" + escapeRegExp(path.join(__dirname, "functions", "node_modules")) + ".*"),
-  new RegExp("^" + escapeRegExp(path.join(__dirname, ".firebase")) + ".*"),
-  new RegExp("^" + escapeRegExp(path.join(__dirname, "dist")) + ".*"),
+  toPathRegex(functionsNodeModules),
+  toPathRegex(firebaseDir),
+  toPathRegex(distDir)
 ];
 
 const idbEsmEntry = path.join(__dirname, "node_modules", "idb", "build", "index.js");

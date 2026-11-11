@@ -1,9 +1,11 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
+import { getUserProfile, subscribeUserProfile, type UserProfile } from "@/lib/userProfile";
 
 const hero =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuAl7pBPV5LCpMtrU_cQRFbxT9DYhPWhUh6R6FNVWKBBA2nlXfZmDIOEJgHsJZQHZkuWWTcbO8DFsAdmIpSPxp599rUEWTJjvAw7hB0tlZR9vfPB9pEmAw5hQlr82vbhfp-R8P1xlByvsUgB2d8griy8E8Cd_N_suT0nlStGanuF2kAMtGTuchWYX12p-Y7l4KDh9AoAk7c65uglUxTWmO3LVyl4EpPWfby8a5CWOwjcJST1qorcAHnrHUEikOxYg5RPahzz-tMuPRg3";
@@ -18,6 +20,15 @@ const avatar =
 
 export function SmagPromotionsDealsNative() {
   const router = useAppRouter();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    void getUserProfile().then((p) => { if (mounted) setProfile(p); });
+    const unsub = subscribeUserProfile((p) => { if (mounted) setProfile(p); });
+    return () => { mounted = false; unsub(); };
+  }, []);
+
   const copyCode = async (code: string) => {
     await Clipboard.setStringAsync(code);
   };
@@ -26,11 +37,18 @@ export function SmagPromotionsDealsNative() {
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
-          <View style={styles.topLeft}>
-            <AppImage source={{ uri: avatar }} style={styles.avatar} />
-            <Image source={require("../../../assets/smag_logo.png")} style={styles.brand} resizeMode="contain" />
-          </View>
-          <Pressable onPress={() => router.push("/smag_notifications")}>
+          <Pressable
+            onPress={() => router.push("/smag_profile")}
+            accessibilityRole="button"
+            accessibilityLabel="View profile"
+          >
+            <AppImage source={{ uri: profile?.avatarUri || avatar }} style={styles.avatar} />
+          </Pressable>
+          <Pressable
+            onPress={() => router.push("/smag_notifications")}
+            accessibilityRole="button"
+            accessibilityLabel="View notifications"
+          >
             <MaterialIcons name="notifications" size={22} color="#a33800" />
           </Pressable>
         </View>
@@ -152,9 +170,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10
   },
-  topLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
   avatar: { width: 40, height: 40, borderRadius: 20 },
-  brand: { width: 80, height: 36 },
   title: { color: "#4b240a", fontSize: 38, fontWeight: "900" },
   subtitle: { marginTop: 4, color: "#805032", fontSize: 16, marginBottom: 12 },
   heroCard: { borderRadius: 24, overflow: "hidden", height: 280, position: "relative" },

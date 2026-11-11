@@ -14,8 +14,8 @@
     "seed:external": "node scripts/seed-external-restaurants.mjs",
     "seed:external:write": "node scripts/seed-external-restaurants.mjs --write",
     "lint": "expo lint",
-    "test": "node ./node_modules/jest/bin/jest.js --passWithNoTests",
-    "test:watch": "node ./node_modules/jest/bin/jest.js --watch",
+    "test": "jest --runInBand --forceExit --detectOpenHandles --passWithNoTests",
+    "test:watch": "jest --watch",
     "test:e2e-smoke": "node scripts/e2e-smoke.mjs"
   },
   "jest": {

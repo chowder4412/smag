@@ -92,7 +92,9 @@ export function SmagNotificationsNative() {
               </Pressable>
               <Text style={styles.headerTitle}>Notifications</Text>
             </View>
-            <AppImage source={{ uri: avatarUri }} style={styles.avatar} accessibilityLabel="Profile picture" />
+            <Pressable onPress={() => router.push("/smag_profile")} accessibilityRole="button" accessibilityLabel="View profile">
+              <AppImage source={{ uri: avatarUri }} style={styles.avatar} accessibilityLabel="Profile picture" />
+            </Pressable>
           </View>
         }
         renderSectionHeader={({ section }) => (

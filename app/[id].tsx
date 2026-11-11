@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { BottomTabBar } from "@/components/navigation/BottomTabBar";
 import { ErrorBoundary } from "@/components/errors/ErrorBoundary";
+import { SmagLoadingScreen } from "@/components/SmagSpinner";
 import { getScreenById } from "@/generated/screens";
 import { getNativeScreenComponent } from "@/screens/native";
 import { colors } from "@/theme/colors";
@@ -45,13 +46,7 @@ export default function PreviewScreen() {
 
   return (
     <ErrorBoundary fallbackLabel="This screen failed to load. Tap to retry.">
-      <Suspense
-        fallback={
-          <View style={styles.loader}>
-            <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        }
-      >
+      <Suspense fallback={<SmagLoadingScreen />}>
         {showTabs ? (
           <View style={styles.withTabs}>
             <View style={styles.screenWrap}>

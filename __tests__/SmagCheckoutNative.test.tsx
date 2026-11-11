@@ -18,12 +18,21 @@ jest.mock("@/lib/userProfile", () => ({
 jest.mock("@/components/AppImage", () => ({ AppImage: () => null }));
 
 const mockGetCartItems = jest.fn();
-const mockCreateOrder = jest.fn();
 const mockClearCart = jest.fn();
+const mockCreateVerifiedOrder = jest.fn();
+
+jest.mock("firebase/app", () => ({
+  getApp: jest.fn(() => ({})),
+  getApps: jest.fn(() => [{}])
+}));
+
+jest.mock("firebase/functions", () => ({
+  getFunctions: jest.fn(() => ({})),
+  httpsCallable: jest.fn(() => mockCreateVerifiedOrder)
+}));
 
 jest.mock("@/lib/firebase/firestore", () => ({
   getCartItems: (...args: unknown[]) => mockGetCartItems(...args),
-  createOrder: (...args: unknown[]) => mockCreateOrder(...args),
   clearCart: (...args: unknown[]) => mockClearCart(...args),
   subscribeAddresses: (_uid: string, cb: (a: { isDefault: boolean; title: string; text: string }[]) => void) => {
     cb([{ isDefault: true, title: "Home", text: "123 Main St" }]);
@@ -36,8 +45,8 @@ describe("SmagCheckoutNative", () => {
     mockRouter.push.mockReset();
     mockRouter.replace.mockReset();
     mockGetCartItems.mockReset();
-    mockCreateOrder.mockReset();
     mockClearCart.mockReset();
+    mockCreateVerifiedOrder.mockReset();
   });
 
   it("shows empty cart message when cart is empty", async () => {
@@ -58,7 +67,9 @@ describe("SmagCheckoutNative", () => {
     mockGetCartItems.mockResolvedValue([
       { id: "1", name: "Pasta", price: 10000, quantity: 1, imageUrl: "", menuItemId: "m1", restaurantId: "r1", restaurantName: "Bistro" }
     ]);
-    mockCreateOrder.mockResolvedValue("order-123");
+    mockCreateVerifiedOrder.mockResolvedValue({
+      data: { orderId: "order-123", total: 10000, subtotal: 10000 }
+    });
     mockClearCart.mockResolvedValue(undefined);
 
     const { getByTestId, getByText } = render(<SmagCheckoutNative />);
@@ -68,7 +79,7 @@ describe("SmagCheckoutNative", () => {
     fireEvent.press(getByTestId("checkout-place-order-button"));
 
     await waitFor(() => {
-      expect(mockCreateOrder).toHaveBeenCalled();
+      expect(mockCreateVerifiedOrder).toHaveBeenCalled();
       expect(mockRouter.replace).toHaveBeenCalledWith("/smag_track_order?orderId=order-123");
     });
   });
@@ -77,13 +88,16 @@ describe("SmagCheckoutNative", () => {
     mockGetCartItems.mockResolvedValue([
       { id: "1", name: "Pasta", price: 10000, quantity: 1, imageUrl: "", menuItemId: "m1", restaurantId: "r1", restaurantName: "Bistro" }
     ]);
-    mockCreateOrder.mockResolvedValue("order-456");
+    mockCreateVerifiedOrder.mockResolvedValue({
+      data: { orderId: "order-456", total: 10000, subtotal: 10000 }
+    });
 
     const { getByTestId, getByText } = render(<SmagCheckoutNative />);
     await waitFor(() => expect(getByText(/Pasta/)).toBeTruthy());
     fireEvent.press(getByTestId("checkout-place-order-button"));
 
     await waitFor(() => {
+      expect(mockCreateVerifiedOrder).toHaveBeenCalled();
       expect(mockRouter.push).toHaveBeenCalledWith(
         expect.stringContaining("/smag_payment?orderId=order-456")
       );

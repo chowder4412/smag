@@ -51,44 +51,17 @@ export type CartItem = {
   customizations?: { label: string; value: string; extraCost: number }[];
 };
 
-export type OrderStatus = "pending_payment" | "confirmed" | "preparing" | "on_delivery" | "delivered" | "cancelled";
-
-export type OrderItem = {
-  menuItemId: string;
-  name: string;
-  basePrice?: number;
-  price: number;
-  imageUrl: string;
-  quantity: number;
-  customizations?: { label: string; value: string; extraCost: number }[];
-};
-
-export type Order = {
-  id: string;
-  userId: string;
-  restaurantId: string;
-  restaurantName: string;
-  items: OrderItem[];
-  subtotal: number;
-  deliveryFee: number;
-  serviceFee: number;
-  total: number;
-  status: OrderStatus;
-  deliveryAddress: string;
-  deliveryInstructions: string;
-  paymentMethod: string;
-  createdAt: Date | null;
-  updatedAt: Date | null;
-  driverLat?: number;
-  driverLng?: number;
-  restaurantLat?: number;
-  restaurantLng?: number;
-  deliveryLat?: number;
-  deliveryLng?: number;
-  driverName?: string;
-  driverVehicle?: string;
-  driverAvatarUrl?: string;
-};
+export type {
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  MenuItemCustomization,
+  OrderItem,
+  Order,
+  BusinessRole,
+  BusinessPermission,
+  AdminRank
+} from "@/types/shared";
 
 export type AppNotification = {
   id: string;
