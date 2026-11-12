@@ -1,7 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -109,7 +108,6 @@ export function SmagHomeNative() {
               <Text style={styles.deliverText}>{profile?.address || "Set Delivery Address"}</Text>
             </Pressable>
           </View>
-          <Image source={require("../../../assets/smag_logo.png")} style={styles.brand} resizeMode="contain" />
           <Pressable
             onPress={() => router.push("/smag_my_cart")}
             accessibilityRole="button"
@@ -354,7 +352,6 @@ const styles = StyleSheet.create({
     letterSpacing: 1
   },
   deliverText: { fontSize: 12, color: "#4b240a", fontWeight: "800" },
-  brand: { width: 80, height: 36 },
   searchWrap: {
     marginTop: 18,
     borderRadius: 999,
