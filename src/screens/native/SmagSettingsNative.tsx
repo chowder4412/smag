@@ -12,9 +12,18 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 
-import { firebaseSignOut } from "@/lib/firebase/auth";
+import { auth, firebaseSignOut } from "@/lib/firebase/auth";
 import { clearOnboardingPending } from "@/lib/startupState";
 import { getUserProfile, resetUserProfile, subscribeUserProfile, type UserProfile } from "@/lib/userProfile";
+import { getSessionTimeoutMinutes, setSessionTimeoutMinutes } from "@/lib/sessionSecurity";
+import {
+  authenticateWithBiometrics,
+  clearBiometricCredential,
+  getBiometricTypeLabel,
+  isBiometricAvailable,
+  isBiometricEnabled,
+  saveBiometricCredential
+} from "@/lib/biometrics";
 import { AppImage } from "@/components/AppImage";
 import { useTheme } from "@/lib/ThemeContext";
 import { useAppRouter } from "@/lib/useAppRouter";
@@ -24,6 +33,40 @@ export function SmagSettingsNative() {
   const { isDark, toggleTheme } = useTheme();
   const [pushEnabled, setPushEnabled] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [sessionTimeout, setSessionTimeout] = useState<number>(5);
+  const [biometricsAvailable, setBiometricsAvailable] = useState(false);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(false);
+  const [biometricLabel, setBiometricLabel] = useState("Face ID / Fingerprint");
+
+  useEffect(() => {
+    void getSessionTimeoutMinutes().then((mins) => setSessionTimeout(mins));
+    void isBiometricAvailable().then((avail) => setBiometricsAvailable(avail));
+    void isBiometricEnabled().then((en) => setBiometricsEnabled(en));
+    void getBiometricTypeLabel().then((lbl) => setBiometricLabel(lbl));
+  }, []);
+
+  async function handleToggleBiometrics(enable: boolean) {
+    if (enable) {
+      const success = await authenticateWithBiometrics();
+      if (success) {
+        const userEmail = auth.currentUser?.email || profile?.email || "";
+        await saveBiometricCredential(userEmail);
+        setBiometricsEnabled(true);
+      }
+    } else {
+      await clearBiometricCredential();
+      setBiometricsEnabled(false);
+    }
+  }
+
+  async function cycleSessionTimeout() {
+    const intervals = [2, 5, 10, 15, 30];
+    const currentIndex = intervals.indexOf(sessionTimeout);
+    const nextIndex = (currentIndex + 1) % intervals.length;
+    const nextVal = intervals[nextIndex] ?? 5;
+    setSessionTimeout(nextVal);
+    await setSessionTimeoutMinutes(nextVal);
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -48,35 +91,78 @@ export function SmagSettingsNative() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            <Pressable onPress={() => router.back()}>
-              <MaterialIcons name="arrow-back" size={22} color="#a33800" />
+            <Pressable
+              onPress={() => router.back()}
+              accessibilityRole="button"
+              accessibilityLabel="Back"
+              testID="settings-back-btn"
+            >
+              <MaterialIcons name="arrow-back" size={24} color="#a33800" />
             </Pressable>
             <Text style={styles.title}>Settings</Text>
           </View>
-          <Image source={require("../../../assets/smag_logo.png")} style={styles.brand} resizeMode="contain" />
         </View>
 
-        <View style={styles.profileCard}>
+        <Pressable
+          style={styles.profileCard}
+          onPress={() => router.push("/smag_edit_profile")}
+          accessibilityRole="button"
+          accessibilityLabel="Edit Profile"
+          testID="settings-edit-profile-btn"
+        >
           <AppImage source={{ uri: profile?.avatarUri ?? "" }} style={styles.avatar} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.profileName}>{profile?.fullName ?? ""}</Text>
-            <Text style={styles.profileMeta}>Gourmet Tier - Since 2023</Text>
+            <Text style={styles.profileName}>{profile?.fullName || "Your Profile"}</Text>
+            <Text style={styles.profileMeta}>{profile?.email || "SMAG Gourmet Member"}</Text>
           </View>
-          <Pressable onPress={() => router.push("/smag_edit_profile")}>
+          <View style={styles.editBadge}>
             <MaterialIcons name="edit" size={18} color="#a33800" />
-          </Pressable>
-        </View>
+          </View>
+        </Pressable>
 
         <GroupTitle text="ACCOUNT SECTION" />
         <View style={styles.section}>
+          <NavRow
+            icon="person"
+            label="Edit Profile Details"
+            sub="Name, phone, address & photo"
+            onPress={() => router.push("/smag_edit_profile")}
+            testID="settings-profile-details-row"
+          />
           <ToggleRow
             icon="notifications"
             label="Push Notifications"
             value={pushEnabled}
             onChange={setPushEnabled}
           />
-          <NavRow icon="lock" label="Privacy Settings" onPress={() => router.push("/smag_support_help")} />
-          <NavRow icon="security" label="Security" onPress={() => router.push("/smag_change_password")} />
+          {biometricsAvailable ? (
+            <ToggleRow
+              icon={biometricLabel.toLowerCase().includes("face") ? "face" : "fingerprint"}
+              label={`${biometricLabel} Login`}
+              value={biometricsEnabled}
+              onChange={handleToggleBiometrics}
+              testID="settings-biometrics-switch"
+            />
+          ) : null}
+          <NavRow
+            icon="lock"
+            label="Privacy Settings"
+            onPress={() => router.push("/smag_support_help")}
+            testID="settings-privacy-row"
+          />
+          <NavRow
+            icon="security"
+            label="Change Password"
+            onPress={() => router.push("/smag_change_password")}
+            testID="settings-change-password-row"
+          />
+          <NavRow
+            icon="timer"
+            label="App Lock & Session Timeout"
+            sub={`Lock after ${sessionTimeout} mins away`}
+            onPress={cycleSessionTimeout}
+            testID="settings-session-timeout-row"
+          />
         </View>
 
         <GroupTitle text="PREFERENCES SECTION" />
@@ -119,9 +205,9 @@ function GroupTitle({ text }: { text: string }) {
   return <Text style={styles.groupTitle}>{text}</Text>;
 }
 
-function NavRow(props: { icon: string; label: string; sub?: string; onPress?: () => void }) {
+function NavRow(props: { icon: string; label: string; sub?: string; onPress?: () => void; testID?: string }) {
   return (
-    <Pressable style={styles.row} onPress={props.onPress}>
+    <Pressable style={styles.row} onPress={props.onPress} testID={props.testID}>
       <View style={styles.rowIcon}>
         <MaterialIcons name={props.icon as never} size={18} color="#a33800" />
       </View>
@@ -139,6 +225,7 @@ function ToggleRow(props: {
   label: string;
   value: boolean;
   onChange: (next: boolean) => void;
+  testID?: string;
 }) {
   return (
     <View style={styles.row}>
@@ -151,6 +238,7 @@ function ToggleRow(props: {
         onValueChange={props.onChange}
         trackColor={{ false: "#dd9f7c66", true: "#ff7941" }}
         thumbColor="#ffffff"
+        testID={props.testID}
       />
     </View>
   );
@@ -180,6 +268,14 @@ const styles = StyleSheet.create({
   avatar: { width: 64, height: 64, borderRadius: 32 },
   profileName: { color: "#4b240a", fontSize: 22, fontWeight: "900" },
   profileMeta: { color: "#805032", fontWeight: "600", fontSize: 12 },
+  editBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#ffede5",
+    alignItems: "center",
+    justifyContent: "center"
+  },
   groupTitle: {
     color: "#805032",
     marginBottom: 8,

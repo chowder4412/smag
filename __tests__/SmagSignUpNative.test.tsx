@@ -127,4 +127,10 @@ describe("SmagSignUpNative", () => {
       expect(mockRouter.replace).toHaveBeenCalledWith("/smag_welcome");
     });
   });
+
+  it("navigates to login screen when Log In footer link is pressed", () => {
+    const { getByTestId } = render(<SmagSignUpNative />);
+    fireEvent.press(getByTestId("login-link"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/smag_login");
+  });
 });

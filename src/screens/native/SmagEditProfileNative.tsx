@@ -124,14 +124,14 @@ export function SmagEditProfileNative() {
         </Pressable>
 
         <View style={styles.formCard}>
-          <Field label="FULL NAME" value={fullName} onChangeText={(v) => { setFullName(v); setNameError(null); }} icon="person" error={nameError} />
-          <Field label="EMAIL ADDRESS" value={email} onChangeText={(v) => { setEmail(v); setEmailError(null); }} icon="alternate-email" error={emailError} />
-          <Field label="PHONE NUMBER" value={phone} onChangeText={(v) => { setPhone(v); setPhoneError(null); }} icon="call" error={phoneError} />
-          <Field label="DELIVERY ADDRESS" value={address} onChangeText={setAddress} icon="home" />
-          <Field label="BIRTHDAY" value={birthday} onChangeText={setBirthday} icon="cake" placeholder="MM/DD/YYYY" />
+          <Field label="FULL NAME" value={fullName} onChangeText={(v) => { setFullName(v); setNameError(null); }} icon="person" error={nameError} testID="edit-profile-name" />
+          <Field label="EMAIL ADDRESS" value={email} onChangeText={(v) => { setEmail(v); setEmailError(null); }} icon="alternate-email" error={emailError} testID="edit-profile-email" keyboardType="email-address" />
+          <Field label="PHONE NUMBER" value={phone} onChangeText={(v) => { setPhone(v); setPhoneError(null); }} icon="call" error={phoneError} testID="edit-profile-phone" keyboardType="phone-pad" />
+          <Field label="DELIVERY ADDRESS" value={address} onChangeText={setAddress} icon="home" testID="edit-profile-address" />
+          <Field label="BIRTHDAY" value={birthday} onChangeText={setBirthday} icon="cake" placeholder="MM/DD/YYYY" testID="edit-profile-birthday" />
         </View>
 
-        <Pressable style={styles.saveBtn} onPress={saveProfile}>
+        <Pressable style={styles.saveBtn} onPress={saveProfile} testID="save-profile-btn" accessibilityRole="button" accessibilityLabel="Save Changes">
           <Text style={styles.saveText}>Save Changes</Text>
         </Pressable>
       </ScrollView>
@@ -146,6 +146,8 @@ function Field(props: {
   icon: string;
   placeholder?: string;
   error?: string | null;
+  testID?: string;
+  keyboardType?: "default" | "email-address" | "phone-pad";
 }) {
   return (
     <View style={styles.fieldWrap}>
@@ -159,6 +161,8 @@ function Field(props: {
           placeholderTextColor="#80503288"
           autoCapitalize="none"
           autoCorrect={false}
+          keyboardType={props.keyboardType ?? "default"}
+          testID={props.testID}
         />
         <MaterialIcons name={props.icon as never} size={18} color="#80503288" />
       </View>

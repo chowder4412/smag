@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { firebaseVerifyPhoneOtp, getFirebaseAuthErrorMessage } from "@/lib/firebase/auth";
 import { clearOnboardingPending } from "@/lib/startupState";
+import { checkRateLimit, recordRateLimitAttempt } from "@/lib/rateLimiter";
 import { useAppRouter } from "@/lib/useAppRouter";
 import { auth } from "@/lib/firebase/auth";
 import { PhoneAuthProvider, signInWithCredential } from "firebase/auth";
@@ -33,6 +34,12 @@ export function SmagPhoneAuthNative() {
       setError("Enter a valid phone number with country code e.g. +234 801 234 5678");
       return;
     }
+    const rateStatus = await checkRateLimit("phone_otp", trimmed);
+    if (!rateStatus.allowed) {
+      setError(rateStatus.message || "Too many OTP requests. Please wait before requesting another.");
+      return;
+    }
+
     setError(null);
     setLoading(true);
     try {
@@ -40,10 +47,12 @@ export function SmagPhoneAuthNative() {
       const provider = new PhoneAuthProvider(auth);
       // On native, verifyPhoneNumber triggers SMS automatically via Firebase
       const vid = await provider.verifyPhoneNumber(trimmed, { type: "recaptcha" } as never);
+      await recordRateLimitAttempt("phone_otp", trimmed, true);
       setVerificationId(vid);
       setStep("otp");
       setTimeout(() => otpRef.current?.focus(), 300);
     } catch (err) {
+      await recordRateLimitAttempt("phone_otp", trimmed, false);
       setError(getFirebaseAuthErrorMessage(err));
     } finally {
       setLoading(false);

@@ -149,4 +149,15 @@ describe("SmagLoginNative", () => {
       expect(mockRouter.replace).toHaveBeenCalledWith("/smag_home");
     });
   });
+
+  it("navigates to sign up screen when Create an Account button or link is pressed", () => {
+    const { getByTestId } = render(<SmagLoginNative />);
+
+    fireEvent.press(getByTestId("create-account-button"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/smag_sign_up");
+
+    mockRouter.push.mockReset();
+    fireEvent.press(getByTestId("signup-link"));
+    expect(mockRouter.push).toHaveBeenCalledWith("/smag_sign_up");
+  });
 });

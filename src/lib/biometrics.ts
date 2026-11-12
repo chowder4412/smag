@@ -1,5 +1,6 @@
 import * as LocalAuthentication from "expo-local-authentication";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Platform } from "react-native";
 
 const BIOMETRIC_EMAIL_KEY = "smag_biometric_email";
 const BIOMETRIC_ENABLED_KEY = "smag_biometric_enabled";
@@ -9,6 +10,21 @@ export async function isBiometricAvailable(): Promise<boolean> {
   if (!compatible) return false;
   const enrolled = await LocalAuthentication.isEnrolledAsync();
   return enrolled;
+}
+
+export async function getBiometricTypeLabel(): Promise<string> {
+  try {
+    const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
+    if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) {
+      return Platform.OS === "ios" ? "Face ID" : "Facial Recognition";
+    }
+    if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) {
+      return Platform.OS === "ios" ? "Touch ID" : "Fingerprint";
+    }
+    return "Face ID / Fingerprint";
+  } catch {
+    return "Face ID / Fingerprint";
+  }
 }
 
 export async function saveBiometricCredential(email: string): Promise<void> {

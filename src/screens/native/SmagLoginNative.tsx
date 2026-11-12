@@ -19,11 +19,13 @@ import { validateEmail, validatePassword } from "@/lib/validation";
 import {
   authenticateWithBiometrics,
   getBiometricEmail,
+  getBiometricTypeLabel,
   isBiometricAvailable,
   isBiometricEnabled,
   saveBiometricCredential
 } from "@/lib/biometrics";
 import { haptics } from "@/lib/haptics";
+import { checkRateLimit, recordRateLimitAttempt } from "@/lib/rateLimiter";
 import { AppImage } from "@/components/AppImage";
 
 const heroImage =
@@ -83,34 +85,52 @@ export function SmagLoginNative() {
     setAuthError(null);
     if (ee || pe) return;
 
-    if (lockedUntil && Date.now() < lockedUntil) {
-      const secsLeft = Math.ceil((lockedUntil - Date.now()) / 1000);
-      setAuthError(`Too many attempts. Try again in ${secsLeft}s.`);
+    const normalizedEmail = email.trim();
+    const rateStatus = await checkRateLimit("login", normalizedEmail);
+    if (!rateStatus.allowed) {
+      setAuthError(rateStatus.message || `Too many attempts. Try again in ${rateStatus.retryAfterSeconds}s.`);
+      void haptics.error();
       return;
     }
 
     setLoading(true);
     try {
-      await firebaseSignIn(email.trim(), password);
+      await firebaseSignIn(normalizedEmail, password);
+      await recordRateLimitAttempt("login", normalizedEmail, true);
       setFailCount(0);
       setLockedUntil(null);
-      // Offer to enable biometrics after successful login
+      // Prompt user to enable biometrics if device supports it and not yet configured
       const available = await isBiometricAvailable();
       const enabled = await isBiometricEnabled();
-      if (available && !enabled) {
-        await saveBiometricCredential(email.trim());
+      if (available && !enabled && Platform.OS !== "web") {
+        const label = await getBiometricTypeLabel();
+        Alert.alert(
+          `Enable ${label}?`,
+          `Would you like to use ${label} for faster sign-in and session unlock? You can also change this anytime in Settings.`,
+          [
+            { text: "Not Now", style: "cancel" },
+            {
+              text: "Enable",
+              onPress: async () => {
+                const verified = await authenticateWithBiometrics();
+                if (verified) {
+                  await saveBiometricCredential(normalizedEmail);
+                }
+              }
+            }
+          ]
+        );
       }
       await haptics.success();
       await clearOnboardingPending();
       router.replace("/smag_home");
     } catch (error) {
-      const newCount = failCount + 1;
-      setFailCount(newCount);
-      if (newCount >= 5) {
-        setLockedUntil(Date.now() + 60000);
-        setAuthError("Too many failed attempts. Please wait 60 seconds before trying again.");
+      const postStatus = await recordRateLimitAttempt("login", normalizedEmail, false);
+      if (!postStatus.allowed || postStatus.isLocked) {
+        setAuthError(postStatus.message || "Too many failed attempts. Please wait before trying again.");
       } else {
-        setAuthError(getFirebaseAuthErrorMessage(error));
+        const remainingNote = postStatus.message ? ` (${postStatus.message})` : "";
+        setAuthError(`${getFirebaseAuthErrorMessage(error)}${remainingNote}`);
       }
       void haptics.error();
     } finally {
@@ -258,6 +278,18 @@ export function SmagLoginNative() {
             <Text style={styles.primaryButtonText}>{loading ? "Signing In..." : "Continue with Email"}</Text>
           </Pressable>
 
+          {/* Create Account Secondary Action Button */}
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => router.push("/smag_sign_up")}
+            accessibilityRole="button"
+            accessibilityLabel="Create an Account"
+            testID="create-account-button"
+          >
+            <MaterialIcons name="person-add-alt-1" size={18} color="#a33800" />
+            <Text style={styles.secondaryButtonText}>Create an Account</Text>
+          </Pressable>
+
           {/* Divider */}
           <View style={styles.dividerRow}>
             <View style={styles.divider} />
@@ -320,9 +352,15 @@ export function SmagLoginNative() {
 
           {/* Footer Link */}
           <Text style={styles.footerText}>
-            New to the gallery?
-            <Text style={styles.footerLink} onPress={() => router.push("/smag_sign_up")}>
-              {" "}Request Invitation
+            Don&apos;t have an account?
+            <Text
+              style={styles.footerLink}
+              onPress={() => router.push("/smag_sign_up")}
+              accessibilityRole="link"
+              accessibilityLabel="Create an Account"
+              testID="signup-link"
+            >
+              {" "}Create an Account
             </Text>
           </Text>
         </View>
@@ -391,6 +429,24 @@ const styles = StyleSheet.create({
     elevation: 4
   },
   primaryButtonText: { color: "#ffefeb", fontWeight: "800", fontSize: 16 },
+  secondaryButton: {
+    marginTop: 12,
+    backgroundColor: "#ffffff",
+    borderWidth: 1.5,
+    borderColor: "#a33800",
+    borderRadius: 999,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    shadowColor: "#a33800",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  secondaryButtonText: { color: "#a33800", fontWeight: "800", fontSize: 15 },
   dividerRow: { marginTop: 22, marginBottom: 14, flexDirection: "row", alignItems: "center", gap: 10 },
   divider: { flex: 1, height: 1, backgroundColor: "rgba(221, 159, 124, 0.35)" },
   dividerText: { color: "#805032", fontSize: 10, fontWeight: "700", letterSpacing: 1 },
@@ -423,6 +479,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff"
   },
   biometricText: { color: "#a33800", fontWeight: "700", fontSize: 15 },
-  footerText: { marginTop: 18, textAlign: "center", color: "#805032", fontSize: 13 },
-  footerLink: { color: "#a33800", fontWeight: "700" }
+  footerText: { marginTop: 22, marginBottom: 12, textAlign: "center", color: "#805032", fontSize: 14 },
+  footerLink: { color: "#a33800", fontWeight: "800", textDecorationLine: "underline" }
 });

@@ -59,6 +59,18 @@ const navItems = [
     sub: "See how you rank",
     icon: "leaderboard",
     route: "/smag_referral_leaderboard"
+  },
+  {
+    label: "Profile Settings",
+    sub: "Personal details, address & photo",
+    icon: "badge",
+    route: "/smag_edit_profile"
+  },
+  {
+    label: "Account & Settings",
+    sub: "Security, biometrics & preferences",
+    icon: "settings",
+    route: "/smag_settings"
   }
 ];
 
@@ -108,15 +120,26 @@ export function SmagProfileNative() {
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.topBar}>
-          <View style={styles.topLeft}>
-            <Pressable onPress={() => router.push("/smag_settings")}>
-              <MaterialIcons name="menu" size={24} color="#FF5C00" />
+          <Text style={styles.topBarTitle}>My Profile</Text>
+          <View style={styles.topRight}>
+            <Pressable
+              style={styles.iconBtn}
+              onPress={() => router.push("/smag_settings")}
+              accessibilityRole="button"
+              accessibilityLabel="Account Settings"
+              testID="profile-settings-btn"
+            >
+              <MaterialIcons name="settings" size={24} color="#a33800" />
             </Pressable>
-            <Image source={require("../../../assets/smag_logo.png")} style={styles.brand} resizeMode="contain" />
+            <Pressable
+              onPress={() => router.push("/smag_edit_profile")}
+              accessibilityRole="button"
+              accessibilityLabel="Edit Profile"
+              testID="profile-edit-btn"
+            >
+              <AppImage source={{ uri: profile?.avatarUri ?? "" }} style={styles.avatar} />
+            </Pressable>
           </View>
-          <Pressable onPress={() => router.push("/smag_edit_profile")}>
-            <AppImage source={{ uri: profile?.avatarUri ?? "" }} style={styles.avatar} />
-          </Pressable>
         </View>
 
         <View style={styles.hero}>
@@ -189,10 +212,19 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between"
+    justifyContent: "space-between",
+    marginBottom: 8
   },
-  topLeft: { flexDirection: "row", alignItems: "center", gap: 8 },
-  brand: { width: 80, height: 36 },
+  topBarTitle: { color: "#4b240a", fontSize: 24, fontWeight: "900" },
+  topRight: { flexDirection: "row", alignItems: "center", gap: 12 },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#ffede5",
+    alignItems: "center",
+    justifyContent: "center"
+  },
   avatar: {
     width: 40,
     height: 40,

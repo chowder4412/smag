@@ -258,7 +258,13 @@ export function SmagSignUpNative() {
 
         <Text style={styles.footerText}>
           Already have an account?
-          <Text style={styles.footerLink} onPress={() => router.push("/smag_login")}>
+          <Text
+            style={styles.footerLink}
+            onPress={() => router.push("/smag_login")}
+            accessibilityRole="link"
+            accessibilityLabel="Log In"
+            testID="login-link"
+          >
             {" "}
             Log In
           </Text>
@@ -401,5 +407,5 @@ const styles = StyleSheet.create({
   socialLogo: { width: 17, height: 17 },
   socialText: { color: "#4b240a", fontSize: 16, fontWeight: "800" },
   footerText: { marginTop: 16, textAlign: "center", color: "#805032", fontSize: 16 },
-  footerLink: { color: "#a33800", fontWeight: "800" }
+  footerLink: { color: "#a33800", fontWeight: "800", textDecorationLine: "underline" }
 });

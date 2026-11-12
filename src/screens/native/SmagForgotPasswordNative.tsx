@@ -5,6 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { firebaseSendPasswordReset, getFirebaseAuthErrorMessage } from "@/lib/firebase/auth";
 import { validateEmail } from "@/lib/validation";
+import { checkRateLimit, recordRateLimitAttempt } from "@/lib/rateLimiter";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
 
@@ -23,14 +24,26 @@ export function SmagForgotPasswordNative() {
       setError(validationError);
       return;
     }
+    const normalizedEmail = email.trim();
+    const rateStatus = await checkRateLimit("password_reset", normalizedEmail);
+    if (!rateStatus.allowed) {
+      setError(rateStatus.message || "Too many password reset requests. Please try again later.");
+      return;
+    }
+
     setError(null);
     setLoading(true);
     try {
-      const normalizedEmail = email.trim();
       await firebaseSendPasswordReset(normalizedEmail);
+      await recordRateLimitAttempt("password_reset", normalizedEmail, true);
       router.push(`/smag_reset_link_sent?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (err) {
-      setError(getFirebaseAuthErrorMessage(err));
+      const postStatus = await recordRateLimitAttempt("password_reset", normalizedEmail, false);
+      if (!postStatus.allowed || postStatus.isLocked) {
+        setError(postStatus.message || "Too many attempts. Please try again later.");
+      } else {
+        setError(getFirebaseAuthErrorMessage(err));
+      }
     } finally {
       setLoading(false);
     }

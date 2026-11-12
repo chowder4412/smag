@@ -19,6 +19,8 @@ import {
   registerForPushNotifications
 } from "@/lib/notifications";
 import { SmagLoadingScreen } from "@/components/SmagSpinner";
+import { initSessionSecurity, recordUserActivity } from "@/lib/sessionSecurity";
+import { SessionLockOverlay } from "@/components/security/SessionLockOverlay";
 
 (Text as unknown as { defaultProps: Record<string, unknown> }).defaultProps =
   (Text as unknown as { defaultProps: Record<string, unknown> }).defaultProps ?? {};
@@ -121,6 +123,10 @@ function ThemedRootLayout() {
   }, []);
 
   useEffect(() => {
+    return initSessionSecurity();
+  }, []);
+
+  useEffect(() => {
     const version = Constants.expoConfig?.version ?? "1.0.0";
     const functions = getFunctions(getApp(), "us-central1");
     void httpsCallable<{ version: string }, { supported: boolean; minVersion: string }>(
@@ -151,14 +157,17 @@ function ThemedRootLayout() {
       {!authReady ? (
         <SmagLoadingScreen />
       ) : (
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: colors.background },
-            animation: "slide_from_right",
-            animationDuration: 220
-          }}
-        />
+        <View style={{ flex: 1 }} onTouchStartCapture={recordUserActivity}>
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: colors.background },
+              animation: "slide_from_right",
+              animationDuration: 220
+            }}
+          />
+          <SessionLockOverlay />
+        </View>
       )}
     </ErrorBoundary>
   );
