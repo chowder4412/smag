@@ -15,7 +15,8 @@
     "lint": "expo lint",
     "test": "jest --runInBand --forceExit --detectOpenHandles --passWithNoTests",
     "test:watch": "jest --watch",
-    "test:e2e-smoke": "node scripts/e2e-smoke.mjs"
+    "test:e2e-smoke": "node scripts/e2e-smoke.mjs",
+    "eas-build-pre-install": "npm config set legacy-peer-deps true"
   },
   "jest": {
     "preset": "jest-expo",
