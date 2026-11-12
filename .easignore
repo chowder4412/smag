@@ -1,0 +1,16 @@
+# EAS Build ignore file
+# Used by EAS CLI instead of .gitignore to determine files uploaded to EAS Build workers.
+# google-services.json and GoogleService-Info.plist are intentionally NOT ignored here
+# so EAS can package your local configs for compilation, while .gitignore keeps them off GitHub.
+
+node_modules/
+.expo/
+.expo-export-check/
+.git/
+functions/
+dist/
+__tests__/
+*.keystore
+*.jks
+smtp_pass.txt
+nul
