@@ -14,8 +14,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { getCurrentUser } from "@/lib/firebase/auth";
-import { addToCart, subscribeMenuItems, type MenuItem } from "@/lib/firebase/firestore";
+import {
+  addToCart,
+  subscribeExternalRestaurants,
+  subscribeMenuItems,
+  type ExternalRestaurant,
+  type MenuItem
+} from "@/lib/firebase/firestore";
 import { AppImage } from "@/components/AppImage";
+import { SkeletonBox } from "@/components/SkeletonLoader";
 import { getUserProfile } from "@/lib/userProfile";
 import { useAppRouter } from "@/lib/useAppRouter";
 import { haptics } from "@/lib/haptics";
@@ -75,7 +82,10 @@ export function SmagExploreNative() {
   const [activeTab, setActiveTab] = useState<ExploreTab>("smag");
   const [activeMealCat, setActiveMealCat] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
+  const [otherSearchQuery, setOtherSearchQuery] = useState("");
   const [allItems, setAllItems] = useState<MenuItem[]>([]);
+  const [externalRestaurants, setExternalRestaurants] = useState<ExternalRestaurant[]>([]);
+  const [extLoading, setExtLoading] = useState(false);
   const [avatarUri, setAvatarUri] = useState("");
   const [selectedDish, setSelectedDish] = useState<SelectedDish | null>(null);
   const [customSelections, setCustomSelections] = useState<Record<string, string>>({});
@@ -85,6 +95,8 @@ export function SmagExploreNative() {
 
   useEffect(() => {
     void getUserProfile().then((p) => setAvatarUri(p.avatarUri));
+
+    // Subscribe to Smag external menu items
     const ids = ["lartiste", "luigi", "ocean_garden"];
     const unsubs = ids.map((id) =>
       subscribeMenuItems(id, (items) => {
@@ -94,27 +106,114 @@ export function SmagExploreNative() {
         });
       })
     );
-    return () => unsubs.forEach((u) => u());
+
+    // Subscribe to external partner restaurants
+    setExtLoading(true);
+    const unsubExt = subscribeExternalRestaurants(
+      (data) => {
+        setExternalRestaurants(data);
+        setExtLoading(false);
+      },
+      () => setExtLoading(false)
+    );
+
+    return () => {
+      unsubs.forEach((u) => u());
+      unsubExt();
+    };
   }, []);
 
-  const searchResults = useMemo(() => {
+  type SearchDishResult = {
+    id: string;
+    name: string;
+    description: string;
+    price: string;
+    priceValue: number;
+    imageUrl: string;
+    categoryLabel: string;
+    isSmagKitchen: boolean;
+    smagDish?: MealDish;
+    smagCategory?: MealCategory;
+    restaurantName?: string;
+  };
+
+  const searchResults = useMemo<SearchDishResult[]>(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
-    return allItems.filter(
-      (i) => i.name.toLowerCase().includes(q) || i.description.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)
-    );
+    const results: SearchDishResult[] = [];
+
+    // 1. Search all Smag Kitchen categories & dishes
+    for (const cat of mealCategories) {
+      for (const dish of cat.dishes) {
+        if (
+          dish.name.toLowerCase().includes(q) ||
+          dish.description.toLowerCase().includes(q) ||
+          cat.label.toLowerCase().includes(q)
+        ) {
+          results.push({
+            id: `smag_${dish.name}`,
+            name: dish.name,
+            description: dish.description,
+            price: dish.price,
+            priceValue: dish.priceValue,
+            imageUrl: dish.image,
+            categoryLabel: cat.label,
+            isSmagKitchen: true,
+            smagDish: dish,
+            smagCategory: cat,
+            restaurantName: "Smag Kitchen"
+          });
+        }
+      }
+    }
+
+    // 2. Search partner menu items
+    for (const item of allItems) {
+      if (
+        item.name.toLowerCase().includes(q) ||
+        item.description.toLowerCase().includes(q) ||
+        item.category.toLowerCase().includes(q)
+      ) {
+        const matchingExt = externalRestaurants.find((r) => r.id === item.restaurantId);
+        results.push({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          price: `₦${item.price.toLocaleString()}`,
+          priceValue: item.price,
+          imageUrl: item.imageUrl,
+          categoryLabel: item.category,
+          isSmagKitchen: false,
+          restaurantName: matchingExt?.name || (item as { restaurantName?: string }).restaurantName || "Partner Restaurant"
+        });
+      }
+    }
+
+    return results;
   }, [searchQuery, allItems]);
+
+  const filteredExternalRestaurants = useMemo(() => {
+    if (!otherSearchQuery.trim()) return externalRestaurants;
+    const q = otherSearchQuery.toLowerCase();
+    return externalRestaurants.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.cuisine.toLowerCase().includes(q) ||
+        r.address.toLowerCase().includes(q)
+    );
+  }, [otherSearchQuery, externalRestaurants]);
 
   const showSearch = activeTab === "smag" && searchQuery.trim().length > 0;
   const selectedGroups = useMemo(
-    () => selectedDish ? customGroupsForDish(selectedDish.dish, selectedDish.category.label) : [],
+    () => (selectedDish ? customGroupsForDish(selectedDish.dish, selectedDish.category.label) : []),
     [selectedDish]
   );
   const selectedOptions = useMemo(
-    () => selectedGroups.map((group) => ({
-      label: group.label,
-      option: group.options.find((opt) => opt.value === customSelections[group.key]) ?? group.options[0]
-    })),
+    () =>
+      selectedGroups.map((group) => ({
+        label: group.label,
+        option: group.options.find((opt) => opt.value === customSelections[group.key]) ?? group.options[0]
+      })),
     [customSelections, selectedGroups]
   );
   const selectedBasePrice = selectedDish?.dish.priceValue ?? 0;
@@ -131,6 +230,80 @@ export function SmagExploreNative() {
     setSelectedDish({ dish, category });
     setCustomSelections(defaults);
     setQuantity(1);
+  }
+
+  async function handleAddTrendingItem(item: (typeof trendingItems)[0]) {
+    const user = getCurrentUser();
+    if (!user) {
+      Alert.alert("Sign in required", "Please sign in before adding items to your cart.");
+      return;
+    }
+
+    const priceNum = parseInt(item.price.replace(/[^0-9]/g, ""), 10) || 18000;
+    const cartPayload = {
+      menuItemId: `trending_${item.title.toLowerCase().replace(/[^a-z0-9]/g, "_")}`,
+      name: item.title,
+      basePrice: priceNum,
+      price: priceNum,
+      imageUrl: item.image,
+      quantity: 1,
+      restaurantId: item.title.includes("Poke") ? "ocean_garden" : "luigi",
+      restaurantName: item.sub.split("•")[0]?.trim() || "Smag Partner Kitchen",
+      customizations: []
+    };
+
+    setAddingDish(true);
+    try {
+      await haptics.tap();
+      if (!isOnline) {
+        await enqueueCartMutation({ type: "add", userId: user.uid, item: cartPayload });
+        Alert.alert("You're offline", "Item saved. It will be added to your cart when you reconnect.");
+        return;
+      }
+      await addToCart(user.uid, cartPayload);
+      router.push("/smag_my_cart");
+    } finally {
+      setAddingDish(false);
+    }
+  }
+
+  async function handleAddSearchItem(item: SearchDishResult) {
+    if (item.isSmagKitchen && item.smagDish && item.smagCategory) {
+      openDishDetail(item.smagDish, item.smagCategory);
+      return;
+    }
+
+    const user = getCurrentUser();
+    if (!user) {
+      Alert.alert("Sign in required", "Please sign in before adding items to your cart.");
+      return;
+    }
+
+    const cartPayload = {
+      menuItemId: item.id,
+      name: item.name,
+      basePrice: item.priceValue,
+      price: item.priceValue,
+      imageUrl: item.imageUrl,
+      quantity: 1,
+      restaurantId: "partner",
+      restaurantName: item.restaurantName || "Partner Restaurant",
+      customizations: []
+    };
+
+    setAddingDish(true);
+    try {
+      await haptics.tap();
+      if (!isOnline) {
+        await enqueueCartMutation({ type: "add", userId: user.uid, item: cartPayload });
+        Alert.alert("You're offline", "Item saved. It will be added to your cart when you reconnect.");
+        return;
+      }
+      await addToCart(user.uid, cartPayload);
+      router.push("/smag_my_cart");
+    } finally {
+      setAddingDish(false);
+    }
   }
 
   async function handleAddConfiguredDish() {
@@ -181,12 +354,22 @@ export function SmagExploreNative() {
         {/* Top bar */}
         <View style={styles.topBar}>
           <View style={styles.topLeft}>
-            <Pressable onPress={() => router.push("/smag_settings")}>
-              <MaterialIcons name="menu" size={26} color="#4b240a" />
+            <Pressable
+              onPress={() => router.push("/smag_settings")}
+              accessibilityRole="button"
+              accessibilityLabel="Settings"
+              testID="explore-settings-btn"
+            >
+              <MaterialIcons name="settings" size={24} color="#a33800" />
             </Pressable>
             <Text style={styles.topTitle}>Explore</Text>
           </View>
-          <Pressable onPress={() => router.push("/smag_profile")}>
+          <Pressable
+            onPress={() => router.push("/smag_profile")}
+            accessibilityRole="button"
+            accessibilityLabel="Profile"
+            testID="explore-profile-btn"
+          >
             <AppImage source={{ uri: avatarUri }} style={styles.avatar} />
           </Pressable>
         </View>
@@ -196,6 +379,9 @@ export function SmagExploreNative() {
           <Pressable
             style={[styles.tabBtn, activeTab === "smag" && styles.tabBtnActive]}
             onPress={() => setActiveTab("smag")}
+            testID="explore-tab-smag"
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === "smag" }}
           >
             <MaterialIcons name="restaurant" size={15} color={activeTab === "smag" ? "#ffefeb" : "#805032"} />
             <Text style={[styles.tabBtnText, activeTab === "smag" && styles.tabBtnTextActive]}>Smag Kitchen</Text>
@@ -203,6 +389,9 @@ export function SmagExploreNative() {
           <Pressable
             style={[styles.tabBtn, activeTab === "other" && styles.tabBtnActive]}
             onPress={() => setActiveTab("other")}
+            testID="explore-tab-other"
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === "other" }}
           >
             <MaterialIcons name="storefront" size={15} color={activeTab === "other" ? "#ffefeb" : "#805032"} />
             <Text style={[styles.tabBtnText, activeTab === "other" && styles.tabBtnTextActive]}>Other Kitchens</Text>
@@ -211,18 +400,95 @@ export function SmagExploreNative() {
 
         {/* Other Kitchens tab */}
         {activeTab === "other" ? (
-          <Pressable style={styles.otherKitchensEntry} onPress={() => router.push("/other_kitchens")}>
-            <View style={styles.otherKitchensIconWrap}>
-              <MaterialIcons name="storefront" size={28} color="#a33800" />
+          <View style={{ marginTop: 14 }}>
+            <View style={styles.searchWrap}>
+              <MaterialIcons name="search" size={20} color="#ff5e07" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search partner kitchens, cuisines..."
+                placeholderTextColor="#80503288"
+                value={otherSearchQuery}
+                onChangeText={setOtherSearchQuery}
+                testID="explore-other-search-input"
+              />
+              {otherSearchQuery.length > 0 && (
+                <Pressable onPress={() => setOtherSearchQuery("")} testID="explore-other-search-clear">
+                  <MaterialIcons name="close" size={18} color="#805032" />
+                </Pressable>
+              )}
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.otherKitchensTitle}>Browse Other Kitchens</Text>
-              <Text style={styles.otherKitchensSub}>
-                Hundreds of restaurants near you, filtered by location and cuisine
-              </Text>
-            </View>
-            <MaterialIcons name="arrow-forward" size={20} color="#a33800" />
-          </Pressable>
+
+            <Pressable
+              style={styles.otherKitchensEntry}
+              onPress={() => router.push("/other_kitchens")}
+              testID="explore-browse-all-kitchens"
+            >
+              <View style={styles.otherKitchensIconWrap}>
+                <MaterialIcons name="storefront" size={28} color="#a33800" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.otherKitchensTitle}>Browse Full Directory</Text>
+                <Text style={styles.otherKitchensSub}>
+                  Filter by GPS distance, ratings, and dietary preferences
+                </Text>
+              </View>
+              <MaterialIcons name="arrow-forward" size={20} color="#a33800" />
+            </Pressable>
+
+            <Text style={[styles.sectionTitle, { marginTop: 18, marginBottom: 12 }]}>Partner Restaurants</Text>
+
+            {extLoading ? (
+              <View style={{ gap: 14 }}>
+                <SkeletonBox width="100%" height={160} borderRadius={18} />
+                <SkeletonBox width="100%" height={160} borderRadius={18} />
+              </View>
+            ) : filteredExternalRestaurants.length === 0 ? (
+              <View style={{ alignItems: "center", marginTop: 30, gap: 8 }}>
+                <MaterialIcons name="store" size={44} color="#ffdbc9" />
+                <Text style={{ color: "#805032", fontSize: 16, fontWeight: "700" }}>No partner kitchens found</Text>
+              </View>
+            ) : (
+              filteredExternalRestaurants.map((r) => (
+                <Pressable
+                  key={r.id}
+                  style={styles.foodCard}
+                  onPress={() => router.push(`/other_kitchen_details?restaurantId=${r.id}`)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${r.name}, ${r.cuisine}`}
+                  testID={`partner-restaurant-${r.id}`}
+                >
+                  <View style={styles.foodImageWrap}>
+                    <AppImage source={{ uri: r.imageUrl }} style={styles.foodImage} />
+                    <View style={styles.ratingPill}>
+                      <MaterialIcons name="star" size={13} color="#a33800" />
+                      <Text style={styles.ratingText}>{r.rating > 0 ? r.rating.toFixed(1) : "New"}</Text>
+                    </View>
+                    {!r.isOpen && (
+                      <View style={styles.closedPill}>
+                        <Text style={styles.closedPillText}>CLOSED</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.foodBody}>
+                    <View style={styles.foodTitleRow}>
+                      <Text style={styles.foodTitle}>{r.name}</Text>
+                      <Text style={styles.deliveryBadge}>{r.deliveryMinutes || 25} min</Text>
+                    </View>
+                    <Text style={styles.foodSub}>{r.cuisine} • {r.address || "Local Kitchen"}</Text>
+                    <View style={styles.foodBottom}>
+                      <Text style={styles.tag}>
+                        {r.deliveryFee === 0 ? "Free Delivery" : `₦${r.deliveryFee.toLocaleString()} Delivery`}
+                      </Text>
+                      <View style={styles.exploreViewBtn}>
+                        <Text style={styles.exploreViewBtnText}>View Menu</Text>
+                        <MaterialIcons name="chevron-right" size={18} color="#a33800" />
+                      </View>
+                    </View>
+                  </View>
+                </Pressable>
+              ))
+            )}
+          </View>
         ) : (
           <>
             {/* Search bar — only shown on Smag tab */}
@@ -234,9 +500,10 @@ export function SmagExploreNative() {
                 placeholderTextColor="#80503288"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
+                testID="explore-search-input"
               />
               {searchQuery.length > 0 && (
-                <Pressable onPress={() => setSearchQuery("")}>
+                <Pressable onPress={() => setSearchQuery("")} testID="explore-search-clear">
                   <MaterialIcons name="close" size={18} color="#805032" />
                 </Pressable>
               )}
@@ -252,30 +519,47 @@ export function SmagExploreNative() {
                     <MaterialIcons name="search-off" size={48} color="#ffdbc9" />
                     <Text style={{ color: "#805032", fontSize: 16, fontWeight: "700" }}>No dishes found</Text>
                   </View>
-                ) : searchResults.map((item) => (
-                  <Pressable
-                    key={item.id}
-                    style={styles.foodCard}
-                    onPress={() => router.push("/smag_restaurant_details")}
-                  >
-                    <View style={styles.foodImageWrap}>
-                      <AppImage source={{ uri: item.imageUrl }} style={styles.foodImage} />
-                    </View>
-                    <View style={styles.foodBody}>
-                      <View style={styles.foodTitleRow}>
-                        <Text style={styles.foodTitle}>{item.name}</Text>
-                        <Text style={styles.foodPrice}>₦{item.price.toLocaleString()}</Text>
+                ) : (
+                  searchResults.map((item) => (
+                    <Pressable
+                      key={item.id}
+                      style={styles.foodCard}
+                      onPress={() => {
+                        if (item.isSmagKitchen && item.smagDish && item.smagCategory) {
+                          openDishDetail(item.smagDish, item.smagCategory);
+                        } else {
+                          router.push("/smag_restaurant_details");
+                        }
+                      }}
+                      testID={`search-result-${item.id}`}
+                    >
+                      <View style={styles.foodImageWrap}>
+                        <AppImage source={{ uri: item.imageUrl }} style={styles.foodImage} />
+                        <View style={styles.mealBadge}>
+                          <Text style={styles.mealBadgeText}>{item.restaurantName || item.categoryLabel}</Text>
+                        </View>
                       </View>
-                      <Text style={styles.foodSub}>{item.description}</Text>
-                      <View style={styles.foodBottom}>
-                        <Text style={styles.tag}>{item.category}</Text>
-                        <Pressable style={styles.addBtn} onPress={() => router.push("/smag_my_cart")}>
-                          <MaterialIcons name="add" size={22} color="#ffefeb" />
-                        </Pressable>
+                      <View style={styles.foodBody}>
+                        <View style={styles.foodTitleRow}>
+                          <Text style={styles.foodTitle}>{item.name}</Text>
+                          <Text style={styles.foodPrice}>{item.price}</Text>
+                        </View>
+                        <Text style={styles.foodSub}>{item.description}</Text>
+                        <View style={styles.foodBottom}>
+                          <Text style={styles.tag}>{item.categoryLabel}</Text>
+                          <Pressable
+                            style={styles.addBtn}
+                            onPress={() => handleAddSearchItem(item)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Add ${item.name} to cart`}
+                          >
+                            <MaterialIcons name="add" size={22} color="#ffefeb" />
+                          </Pressable>
+                        </View>
                       </View>
-                    </View>
-                  </Pressable>
-                ))}
+                    </Pressable>
+                  ))
+                )}
               </>
             ) : (
               <>
@@ -309,11 +593,12 @@ export function SmagExploreNative() {
                   </View>
                 </ScrollView>
 
-                {mealCategories[activeMealCat].dishes.map((dish) => (
+                {mealCategories[activeMealCat].dishes.map((dish, dishIdx) => (
                   <Pressable
                     key={dish.name}
                     style={styles.foodCard}
                     onPress={() => openDishDetail(dish, mealCategories[activeMealCat])}
+                    testID={`dish-card-${dishIdx}`}
                   >
                     <View style={styles.foodImageWrap}>
                       <AppImage source={{ uri: dish.image }} style={styles.foodImage} />
@@ -335,6 +620,7 @@ export function SmagExploreNative() {
                           onPress={() => openDishDetail(dish, mealCategories[activeMealCat])}
                           accessibilityRole="button"
                           accessibilityLabel={`Customize ${dish.name}`}
+                          testID={`dish-add-btn-${dishIdx}`}
                         >
                           <MaterialIcons name="add" size={22} color="#ffefeb" />
                         </Pressable>
@@ -346,11 +632,12 @@ export function SmagExploreNative() {
                 <Text style={styles.trendingTitle}>Trending Now</Text>
                 <Text style={styles.trendingSubtitle}>Curated bites from our top kitchens</Text>
 
-                {trendingItems.map((item) => (
+                {trendingItems.map((item, idx) => (
                   <Pressable
                     key={item.title}
                     style={styles.foodCard}
                     onPress={() => router.push("/smag_restaurant_details")}
+                    testID={`trending-card-${idx}`}
                   >
                     <View style={styles.foodImageWrap}>
                       <AppImage source={{ uri: item.image }} style={styles.foodImage} />
@@ -371,7 +658,13 @@ export function SmagExploreNative() {
                             <Text key={tag} style={styles.tag}>{tag}</Text>
                           ))}
                         </View>
-                        <Pressable style={styles.addBtn} onPress={() => router.push("/smag_my_cart")}>
+                        <Pressable
+                          style={styles.addBtn}
+                          onPress={() => handleAddTrendingItem(item)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Add ${item.title} to cart`}
+                          testID={`add-trending-${idx}`}
+                        >
                           <MaterialIcons name="add" size={22} color="#ffefeb" />
                         </Pressable>
                       </View>
@@ -459,7 +752,13 @@ function DishDetailModal({
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.detailContent}>
               <View style={styles.detailHero}>
                 <AppImage source={{ uri: dish.image }} style={styles.detailImage} />
-                <Pressable style={styles.detailCloseBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close dish details">
+                <Pressable
+                  style={styles.detailCloseBtn}
+                  onPress={onClose}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close dish details"
+                  testID="dish-modal-close-btn"
+                >
                   <MaterialIcons name="close" size={28} color="#ffffff" />
                 </Pressable>
                 <View style={styles.detailSearchBtn}>
@@ -495,6 +794,7 @@ function DishDetailModal({
                               onPress={() => onSelect(group.key, option.value)}
                               accessibilityRole="radio"
                               accessibilityState={{ selected }}
+                              testID={`dish-option-${group.key}-${option.value}`}
                             >
                               <View style={styles.optionTop}>
                                 <Text style={[styles.optionTitle, selected && styles.optionTitleActive]}>{option.value}</Text>
@@ -518,11 +818,23 @@ function DishDetailModal({
 
             <View style={styles.detailFooter}>
               <View style={styles.qtyPill}>
-                <Pressable style={styles.qtyBtnDetail} onPress={() => onQuantityChange(-1)} accessibilityRole="button" accessibilityLabel="Decrease quantity">
+                <Pressable
+                  style={styles.qtyBtnDetail}
+                  onPress={() => onQuantityChange(-1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Decrease quantity"
+                  testID="dish-modal-qty-decrease"
+                >
                   <MaterialIcons name="remove" size={18} color="#a33800" />
                 </Pressable>
-                <Text style={styles.qtyTextDetail}>{quantity}</Text>
-                <Pressable style={styles.qtyBtnDetail} onPress={() => onQuantityChange(1)} accessibilityRole="button" accessibilityLabel="Increase quantity">
+                <Text style={styles.qtyTextDetail} testID="dish-modal-qty-text">{quantity}</Text>
+                <Pressable
+                  style={styles.qtyBtnDetail}
+                  onPress={() => onQuantityChange(1)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Increase quantity"
+                  testID="dish-modal-qty-increase"
+                >
                   <MaterialIcons name="add" size={18} color="#a33800" />
                 </Pressable>
               </View>
@@ -533,6 +845,7 @@ function DishDetailModal({
                 accessibilityRole="button"
                 accessibilityLabel={`Add ${quantity} ${dish.name} to cart for ${formatNaira(total)}`}
                 accessibilityState={{ busy: adding }}
+                testID="dish-modal-add-btn"
               >
                 {adding ? (
                   <ActivityIndicator color="#ffefeb" />
@@ -608,6 +921,35 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 4
   },
   ratingText: { color: "#a33800", fontWeight: "800", fontSize: 12 },
+  closedPill: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    backgroundColor: "rgba(179,27,37,0.9)",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4
+  },
+  closedPillText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  deliveryBadge: {
+    color: "#a33800",
+    fontWeight: "800",
+    fontSize: 13
+  },
+  exploreViewBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2
+  },
+  exploreViewBtnText: {
+    color: "#a33800",
+    fontWeight: "800",
+    fontSize: 13
+  },
   foodBody: { padding: 14 },
   foodTitleRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", gap: 8 },
   foodTitle: { flex: 1, color: "#4b240a", fontSize: 20, fontWeight: "900", lineHeight: 24 },

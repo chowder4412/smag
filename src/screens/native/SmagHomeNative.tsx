@@ -17,6 +17,7 @@ import { subscribePromotions, subscribeMenuItems, type Promotion, type MenuItem 
 import { AppImage } from "@/components/AppImage";
 import { SkeletonBox } from "@/components/SkeletonLoader";
 import { useAppRouter } from "@/lib/useAppRouter";
+import { SMAG_KITCHEN_CATEGORIES, menuItemIdForDish } from "@/lib/smagKitchenMenu";
 
 const hero1 =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuCXyDQAavvyvj9Zd2hhhENCbz1TGo7v13oPVjuCE8jV6mM2DlinIVZQu73-crFbUBZuvoD7faPZCaqo_V8-A6boLL1ZTyEA6OeObcXPK77kFmVEoMz9jyAQ5GURugEzsOPzIjlPG8HEYc9nCHFB3mqCitYLgj5zpj9vXd_7uhsVa3VKfzyXvVSGnf2z_6MDCWB4DLSmwwMVzI61QuJ9UGhe5cSubPuqSzGkw41Ai45zEqlI9m8JIDXJHHfklvKn_ao1Ts3OJwV0_Lc8";
@@ -41,13 +42,29 @@ export function SmagHomeNative() {
   const [allMenuItems, setAllMenuItems] = useState<MenuItem[]>([]);
   const [searchFocused, setSearchFocused] = useState(false);
 
+  const smagMenuItems = useMemo<MenuItem[]>(() => {
+    return SMAG_KITCHEN_CATEGORIES.flatMap((cat) =>
+      cat.dishes.map((dish) => ({
+        id: `smag_${menuItemIdForDish(dish.name)}`,
+        name: dish.name,
+        description: dish.description,
+        price: dish.priceValue,
+        category: cat.label,
+        imageUrl: dish.image,
+        available: true,
+        restaurantId: "smag_kitchen"
+      }))
+    );
+  }, []);
+
   const searchResults = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const q = searchQuery.toLowerCase();
-    return allMenuItems.filter(
+    const combined = [...smagMenuItems, ...allMenuItems];
+    return combined.filter(
       (i) => i.name.toLowerCase().includes(q) || i.description.toLowerCase().includes(q) || i.category.toLowerCase().includes(q)
     ).slice(0, 8);
-  }, [searchQuery, allMenuItems]);
+  }, [searchQuery, smagMenuItems, allMenuItems]);
 
   const showResults = searchFocused && searchQuery.trim().length > 0;
 
@@ -74,16 +91,31 @@ export function SmagHomeNative() {
         <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
           <View style={styles.leftHeader}>
-            <Pressable onPress={() => router.push("/smag_profile")} accessibilityRole="button" accessibilityLabel="View profile">
+            <Pressable
+              onPress={() => router.push("/smag_profile")}
+              accessibilityRole="button"
+              accessibilityLabel="View profile"
+              testID="home-profile-btn"
+            >
               <AppImage source={{ uri: profile?.avatarUri ?? "" }} style={styles.avatar} />
             </Pressable>
-            <View>
+            <Pressable
+              onPress={() => router.push("/smag_saved_addresses")}
+              accessibilityRole="button"
+              accessibilityLabel="Delivery address"
+              testID="home-delivery-address-btn"
+            >
               <Text style={styles.deliverLabel}>DELIVER TO</Text>
-              <Text style={styles.deliverText}>{profile?.address ?? ""}</Text>
-            </View>
+              <Text style={styles.deliverText}>{profile?.address || "Set Delivery Address"}</Text>
+            </Pressable>
           </View>
           <Image source={require("../../../assets/smag_logo.png")} style={styles.brand} resizeMode="contain" />
-          <Pressable onPress={() => router.push("/smag_my_cart")} accessibilityRole="button" accessibilityLabel="View cart">
+          <Pressable
+            onPress={() => router.push("/smag_my_cart")}
+            accessibilityRole="button"
+            accessibilityLabel="View cart"
+            testID="home-cart-btn"
+          >
             <CartBadgeIcon size={24} color="#FF5C00" />
           </Pressable>
         </View>
@@ -102,20 +134,32 @@ export function SmagHomeNative() {
               returnKeyType="search"
               accessibilityLabel="Search for dishes"
               accessibilityHint="Type to search Smag menu items"
+              testID="home-search-input"
             />
             {searchQuery.length > 0 ? (
-              <Pressable onPress={() => { setSearchQuery(""); setSearchFocused(false); }}>
+              <Pressable
+                onPress={() => { setSearchQuery(""); setSearchFocused(false); }}
+                accessibilityRole="button"
+                accessibilityLabel="Clear search"
+                testID="home-search-clear"
+              >
                 <MaterialIcons name="close" size={18} color="#805032" />
               </Pressable>
             ) : (
-              <Pressable style={styles.tuneButton} onPress={() => router.push("/smag_explore")}>
+              <Pressable
+                style={styles.tuneButton}
+                onPress={() => router.push("/smag_explore")}
+                accessibilityRole="button"
+                accessibilityLabel="Open explore filters"
+                testID="home-search-filter"
+              >
                 <MaterialIcons name="tune" size={18} color="#ffefeb" />
               </Pressable>
             )}
           </View>
 
           {showResults && (
-            <View style={styles.searchDropdown}>
+            <View style={styles.searchDropdown} testID="home-search-dropdown">
               {/* Smag Kitchen results header */}
               <View style={styles.dropdownSection}>
                 <MaterialIcons name="restaurant" size={13} color="#a33800" />
@@ -133,7 +177,16 @@ export function SmagHomeNative() {
                     style={styles.searchResultRow}
                     accessibilityRole="button"
                     accessibilityLabel={`${item.name}, ${item.category}, ₦${item.price.toLocaleString()}`}
-                    onPress={() => { setSearchQuery(""); setSearchFocused(false); router.push("/smag_menu"); }}
+                    onPress={() => {
+                      setSearchQuery("");
+                      setSearchFocused(false);
+                      if (item.restaurantId === "smag_kitchen") {
+                        router.push("/smag_menu");
+                      } else {
+                        router.push("/smag_restaurant_details");
+                      }
+                    }}
+                    testID={`home-search-result-${item.id}`}
                   >
                     <AppImage source={{ uri: item.imageUrl }} style={styles.searchResultImage} />
                     <View style={{ flex: 1 }}>
@@ -150,6 +203,7 @@ export function SmagHomeNative() {
                 style={styles.searchOtherKitchens}
                 accessibilityRole="button"
                 accessibilityLabel={`Search Other Kitchens for ${searchQuery}`}
+                testID="home-search-other-kitchens"
                 onPress={() => {
                   const q = searchQuery;
                   setSearchQuery("");
@@ -180,7 +234,7 @@ export function SmagHomeNative() {
                 <SkeletonBox width={290} height={220} borderRadius={24} />
                 <SkeletonBox width={290} height={220} borderRadius={24} />
               </>
-            ) : promotions.length > 0 ? promotions.map((promo) => (
+            ) : promotions.length > 0 ? promotions.map((promo, idx) => (
               <HeroCard
                 key={promo.id}
                 image={promo.imageUrl}
@@ -188,11 +242,26 @@ export function SmagHomeNative() {
                 title={promo.title}
                 subtitle={promo.subtitle}
                 onPress={() => router.push("/smag_promotions_deals")}
+                testID={`hero-card-${promo.id || idx}`}
               />
             )) : (
               <>
-                <HeroCard image={hero1} tag="Editor's Choice" title="20% Off Fine Dining" subtitle="Experience the city's finest kitchens." onPress={() => router.push("/smag_promotions_deals")} />
-                <HeroCard image={hero2} tag="New Arrival" title="Free Delivery Burger Day" subtitle="Only at The Bun & Barrel." onPress={() => router.push("/smag_menu")} />
+                <HeroCard
+                  image={hero1}
+                  tag="Editor's Choice"
+                  title="20% Off Fine Dining"
+                  subtitle="Experience the city's finest kitchens."
+                  onPress={() => router.push("/smag_promotions_deals")}
+                  testID="hero-card-default-0"
+                />
+                <HeroCard
+                  image={hero2}
+                  tag="New Arrival"
+                  title="Free Delivery Burger Day"
+                  subtitle="Only at The Bun & Barrel."
+                  onPress={() => router.push("/smag_menu")}
+                  testID="hero-card-default-1"
+                />
               </>
             )}
           </View>
@@ -201,7 +270,14 @@ export function SmagHomeNative() {
         <Text style={styles.quickTitle}>Quick Access</Text>
         <View style={styles.quickGrid}>
           {quickLinks.map((link) => (
-            <Pressable key={link.label} style={styles.quickCard} onPress={() => router.push(link.route)} accessibilityRole="button" accessibilityLabel={link.label}>
+            <Pressable
+              key={link.label}
+              style={styles.quickCard}
+              onPress={() => router.push(link.route)}
+              accessibilityRole="button"
+              accessibilityLabel={link.label}
+              testID={`quick-link-${link.label.toLowerCase()}`}
+            >
               <View style={styles.quickIcon}>
                 <MaterialIcons name={link.icon} size={20} color="#a33800" />
               </View>
@@ -212,11 +288,17 @@ export function SmagHomeNative() {
 
         <View style={styles.otherKitchensHeader}>
           <Text style={styles.otherKitchensTitle}>Other Kitchens</Text>
-          <Pressable onPress={() => router.push("/other_kitchens")}>
+          <Pressable onPress={() => router.push("/other_kitchens")} testID="home-other-kitchens-see-all">
             <Text style={styles.seeAll}>See All</Text>
           </Pressable>
         </View>
-        <Pressable style={styles.otherKitchensBanner} onPress={() => router.push("/other_kitchens")} accessibilityRole="button" accessibilityLabel="Explore nearby restaurants in Other Kitchens">
+        <Pressable
+          style={styles.otherKitchensBanner}
+          onPress={() => router.push("/other_kitchens")}
+          accessibilityRole="button"
+          accessibilityLabel="Explore nearby restaurants in Other Kitchens"
+          testID="home-other-kitchens-banner"
+        >
           <View style={styles.otherKitchensIconWrap}>
             <MaterialIcons name="storefront" size={32} color="#a33800" />
           </View>
@@ -238,9 +320,10 @@ function HeroCard(props: {
   title: string;
   subtitle: string;
   onPress: () => void;
+  testID?: string;
 }) {
   return (
-    <Pressable style={styles.heroCard} onPress={props.onPress}>
+    <Pressable style={styles.heroCard} onPress={props.onPress} testID={props.testID}>
       <AppImage source={{ uri: props.image }} style={styles.heroImage} />
       <View style={styles.heroOverlay} />
       <View style={styles.heroTextWrap}>

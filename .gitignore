@@ -15,6 +15,8 @@ node_modules
 .env.*.local
 
 # Firebase service account / native config files with real API keys
+google-services.json
+GoogleService-Info.plist
 android/app/google-services.json
 firebase/google-services.json
 firebase/GoogleService-Info.plist

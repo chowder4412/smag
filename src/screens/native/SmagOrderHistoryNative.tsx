@@ -4,11 +4,12 @@ import { ActivityIndicator, Alert, FlatList, Pressable, StyleSheet, Text, View }
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { getCurrentUser } from "@/lib/firebase/auth";
-import { subscribeOrders, reorderItems, type Order } from "@/lib/firebase/firestore";
+import { subscribeOrders, subscribePoints, reorderItems, type Order } from "@/lib/firebase/firestore";
 import { CartBadgeIcon } from "@/components/CartBadgeIcon";
 import { ListSkeleton } from "@/components/SkeletonLoader";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
+import { useNetworkStatus } from "@/lib/useNetworkStatus";
 
 function formatDate(date: Date | null): string {
   if (!date) return "";
@@ -22,14 +23,24 @@ export function SmagOrderHistoryNative() {
   const router = useAppRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [limit, setLimit] = useState(20);
+  const [credits, setCredits] = useState<number | null>(null);
 
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const isOnline = useNetworkStatus();
 
   async function handleReorder(order: Order) {
     const user = getCurrentUser();
-    if (!user) return;
+    if (!user) {
+      Alert.alert("Sign in required", "Please sign in to reorder.");
+      return;
+    }
+    if (!isOnline) {
+      Alert.alert("You're offline", "Reordering requires an active internet connection to verify dish availability.");
+      return;
+    }
     setReorderingId(order.id);
     try {
       await reorderItems(user.uid, order);
@@ -41,17 +52,43 @@ export function SmagOrderHistoryNative() {
     }
   }
 
+  function handleRefresh() {
+    const user = getCurrentUser();
+    if (!user) return;
+    setRefreshing(true);
+    const unsub = subscribeOrders(
+      user.uid,
+      (data) => {
+        setOrders(data);
+        setRefreshing(false);
+      },
+      () => {
+        setRefreshing(false);
+        setError("Could not load orders. Pull down to retry.");
+      },
+      limit
+    );
+    // Auto-clean temporary subscription after initial snapshot
+    setTimeout(() => unsub(), 2000);
+  }
+
   useEffect(() => {
     const user = getCurrentUser();
     if (!user) { setLoading(false); return; }
     setError(null);
-    const unsub = subscribeOrders(
+    const unsubOrders = subscribeOrders(
       user.uid,
       (data) => { setOrders(data); setLoading(false); },
       () => { setLoading(false); setError("Could not load orders. Pull down to retry."); },
       limit
     );
-    return unsub;
+    const unsubPoints = subscribePoints(user.uid, (pts) => {
+      setCredits(pts);
+    });
+    return () => {
+      unsubOrders();
+      unsubPoints();
+    };
   }, [limit]);
 
   const delivered = orders.filter((o) => o.status === "delivered").length;
@@ -60,19 +97,36 @@ export function SmagOrderHistoryNative() {
   const ListHeader = (
     <View style={styles.listHeader}>
       <View style={styles.header}>
-        <Pressable style={styles.iconBtn} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
+        <Pressable
+          style={styles.iconBtn}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          testID="orders-back-btn"
+        >
           <MaterialIcons name="arrow-back" size={22} color="#a33800" />
         </Pressable>
         <Text style={styles.headerTitle}>Order History</Text>
-        <Pressable style={styles.iconBtn} onPress={() => router.push("/smag_my_cart")} accessibilityRole="button" accessibilityLabel="View cart">
+        <Pressable
+          style={styles.iconBtn}
+          onPress={() => router.push("/smag_my_cart")}
+          accessibilityRole="button"
+          accessibilityLabel="View cart"
+          testID="orders-cart-btn"
+        >
           <CartBadgeIcon size={22} color="#a33800" />
         </Pressable>
       </View>
       <View style={styles.summaryGrid}>
-        <SummaryCard value={String(orders.length)} label="Total Orders" />
-        <SummaryCard value={String(inProgress)} label="In Progress" highlighted />
-        <SummaryCard value={String(delivered)} label="Delivered" />
-        <SummaryCard value="₦" label="Credits" />
+        <SummaryCard value={String(orders.length)} label="Total Orders" testID="orders-summary-total" />
+        <SummaryCard value={String(inProgress)} label="In Progress" highlighted testID="orders-summary-in-progress" />
+        <SummaryCard value={String(delivered)} label="Delivered" testID="orders-summary-delivered" />
+        <SummaryCard
+          value={credits !== null ? `₦${credits.toLocaleString()}` : "₦0"}
+          label="Credits"
+          testID="orders-summary-credits"
+          onPress={() => router.push("/smag_membership_rewards")}
+        />
       </View>
       <Text style={styles.sectionTitle}>Recent Orders</Text>
       {error && (
@@ -92,6 +146,8 @@ export function SmagOrderHistoryNative() {
         keyExtractor={(o) => o.id}
         contentContainerStyle={styles.content}
         ListHeaderComponent={ListHeader}
+        refreshing={refreshing}
+        onRefresh={handleRefresh}
         renderItem={({ item: order }) => (
           <OrderCard
             order={order}
@@ -108,7 +164,13 @@ export function SmagOrderHistoryNative() {
             <View style={styles.emptyWrap}>
               <MaterialIcons name="receipt-long" size={56} color="#ffdbc9" />
               <Text style={styles.emptyText}>No orders yet</Text>
-              <Pressable style={styles.browseBtn} onPress={() => router.push("/smag_menu")} accessibilityRole="button" accessibilityLabel="Browse menu">
+              <Pressable
+                style={styles.browseBtn}
+                onPress={() => router.push("/smag_menu")}
+                accessibilityRole="button"
+                accessibilityLabel="Browse menu"
+                testID="orders-browse-menu-btn"
+              >
                 <Text style={styles.browseBtnText}>Browse Menu</Text>
               </Pressable>
             </View>
@@ -116,7 +178,13 @@ export function SmagOrderHistoryNative() {
         }
         ListFooterComponent={
           orders.length >= limit ? (
-            <Pressable style={styles.loadMoreBtn} onPress={() => setLimit((l) => l + 20)} accessibilityRole="button" accessibilityLabel="Load more orders">
+            <Pressable
+              style={styles.loadMoreBtn}
+              onPress={() => setLimit((l) => l + 20)}
+              accessibilityRole="button"
+              accessibilityLabel="Load more orders"
+              testID="orders-load-more-btn"
+            >
               <Text style={styles.loadMoreText}>Load More</Text>
             </Pressable>
           ) : null
@@ -126,9 +194,15 @@ export function SmagOrderHistoryNative() {
   );
 }
 
-function SummaryCard(props: { value: string; label: string; highlighted?: boolean }) {
-  return (
-    <View style={[styles.summaryCard, props.highlighted && styles.summaryCardHighlighted]}>
+function SummaryCard(props: {
+  value: string;
+  label: string;
+  highlighted?: boolean;
+  testID?: string;
+  onPress?: () => void;
+}) {
+  const content = (
+    <View style={[styles.summaryCard, props.highlighted && styles.summaryCardHighlighted]} testID={props.testID}>
       <Text style={[styles.summaryValue, props.highlighted && styles.summaryValueHighlighted]}>
         {props.value}
       </Text>
@@ -137,6 +211,16 @@ function SummaryCard(props: { value: string; label: string; highlighted?: boolea
       </Text>
     </View>
   );
+
+  if (props.onPress) {
+    return (
+      <Pressable style={{ width: "48%" }} onPress={props.onPress} accessibilityRole="button">
+        {content}
+      </Pressable>
+    );
+  }
+
+  return content;
 }
 
 function OrderCard({ order, reordering, onTrack, onReorder, onRate, onReceipt }: {
@@ -161,7 +245,7 @@ function OrderCard({ order, reordering, onTrack, onReorder, onRate, onReceipt }:
   };
 
   return (
-    <View style={[styles.orderCard, cancelled && styles.orderCardCancelled]}>
+    <View style={[styles.orderCard, cancelled && styles.orderCardCancelled]} testID={`order-card-${order.id}`}>
       {firstItem && (
         <View style={styles.imageWrap}>
           <AppImage source={{ uri: firstItem.imageUrl }} style={styles.orderImage} />
@@ -194,21 +278,47 @@ function OrderCard({ order, reordering, onTrack, onReorder, onRate, onReceipt }:
           )}
           <View style={{ flexDirection: "row", gap: 8 }}>
             {active && (
-              <Pressable style={styles.trackBtn} onPress={onTrack} accessibilityRole="button" accessibilityLabel={`Track order from ${order.restaurantName}`}>
+              <Pressable
+                style={styles.trackBtn}
+                onPress={onTrack}
+                accessibilityRole="button"
+                accessibilityLabel={`Track order from ${order.restaurantName}`}
+                testID={`track-btn-${order.id}`}
+              >
                 <Text style={styles.trackBtnText}>Track</Text>
               </Pressable>
             )}
             {delivered && (
-              <Pressable style={styles.rateBtn} onPress={onRate} accessibilityRole="button" accessibilityLabel={`Rate order from ${order.restaurantName}`}>
+              <Pressable
+                style={styles.rateBtn}
+                onPress={onRate}
+                accessibilityRole="button"
+                accessibilityLabel={`Rate order from ${order.restaurantName}`}
+                testID={`rate-btn-${order.id}`}
+              >
                 <Text style={styles.rateBtnText}>Rate</Text>
               </Pressable>
             )}
             {delivered && (
-              <Pressable style={styles.receiptBtn} onPress={onReceipt} accessibilityRole="button" accessibilityLabel={`View receipt for order from ${order.restaurantName}`}>
+              <Pressable
+                style={styles.receiptBtn}
+                onPress={onReceipt}
+                accessibilityRole="button"
+                accessibilityLabel={`View receipt for order from ${order.restaurantName}`}
+                testID={`receipt-btn-${order.id}`}
+              >
                 <Text style={styles.receiptBtnText}>Receipt</Text>
               </Pressable>
             )}
-            <Pressable style={[styles.reorderBtn, cancelled && styles.reorderBtnSoft, reordering && { opacity: 0.6 }]} onPress={onReorder} disabled={reordering} accessibilityRole="button" accessibilityLabel={`Reorder from ${order.restaurantName}`} accessibilityState={{ busy: reordering }}>
+            <Pressable
+              style={[styles.reorderBtn, cancelled && styles.reorderBtnSoft, reordering && { opacity: 0.6 }]}
+              onPress={onReorder}
+              disabled={reordering}
+              accessibilityRole="button"
+              accessibilityLabel={`Reorder from ${order.restaurantName}`}
+              accessibilityState={{ busy: reordering }}
+              testID={`reorder-btn-${order.id}`}
+            >
               {reordering
                 ? <ActivityIndicator size="small" color="#ffefeb" />
                 : <Text style={[styles.reorderText, cancelled && styles.reorderTextSoft]}>Reorder</Text>}

@@ -13,8 +13,9 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
-import { firebaseUpdatePassword, getFirebaseAuthErrorMessage } from "@/lib/firebase/auth";
+import { firebaseUpdatePassword, getCurrentUser, getFirebaseAuthErrorMessage } from "@/lib/firebase/auth";
 import { validatePassword } from "@/lib/validation";
+import { checkRateLimit, recordRateLimitAttempt } from "@/lib/rateLimiter";
 
 const heroImage =
   "https://lh3.googleusercontent.com/aida-public/AB6AXuClabG9xn7-NLjp83gp9Da86YPZN2m7irL4MiPLQAqUrD9rXBtTBF0QvyhuxYYXf2IO283FzmJre7eIFSEu4fXXJuDyQAIKLamLqIRiOMn_KOX9bqQKm_SeMUM-_T-OjCGIMVp6CRffvwyZAB0q2QOR5bcZWwgy-ivCKE1PkUQ0iX7mjqgHuwFBDXzmvIz2qLawm-35vuI74k0OYoLH-3D15aUc2h3eVrTOs2MRzDc3bA1zSqvdzIz-lsMqr-7guUmGnzcow7aXXkXS";
@@ -50,14 +51,28 @@ export function SmagChangePasswordNative() {
       return;
     }
 
+    const user = getCurrentUser();
+    const rateIdentifier = user?.email || "current_user";
+    const rateStatus = await checkRateLimit("change_password", rateIdentifier);
+    if (!rateStatus.allowed) {
+      setError(rateStatus.message || "Too many password change attempts. Please wait.");
+      return;
+    }
+
     setSaving(true);
     try {
       await firebaseUpdatePassword(current, nextPass);
+      await recordRateLimitAttempt("change_password", rateIdentifier, true);
       Alert.alert("Password updated", "Your password has been changed successfully.", [
         { text: "OK", onPress: () => router.replace("/smag_settings") }
       ]);
     } catch (err) {
-      setError(getFirebaseAuthErrorMessage(err));
+      const postStatus = await recordRateLimitAttempt("change_password", rateIdentifier, false);
+      if (!postStatus.allowed || postStatus.isLocked) {
+        setError(postStatus.message || "Too many attempts. Please wait before trying again.");
+      } else {
+        setError(getFirebaseAuthErrorMessage(err));
+      }
     } finally {
       setSaving(false);
     }

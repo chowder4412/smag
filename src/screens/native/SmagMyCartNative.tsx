@@ -5,7 +5,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import { getCurrentUser } from "@/lib/firebase/auth";
 import { AppImage } from "@/components/AppImage";
-import { subscribeCart, updateCartItemQty, validatePromoCode, incrementPromoUsage, type CartItem } from "@/lib/firebase/firestore";
+import { subscribeCart, updateCartItemQty, validatePromoCode, type CartItem } from "@/lib/firebase/firestore";
 import { getUserProfile } from "@/lib/userProfile";
 import { useNetworkStatus } from "@/lib/useNetworkStatus";
 import { haptics } from "@/lib/haptics";
@@ -139,7 +139,6 @@ export function SmagMyCartNative() {
                     setPromoApplied(true);
                     setPromoDiscount(result.discount);
                     setPromoId(result.promoId ?? null);
-                    if (result.promoId) void incrementPromoUsage(result.promoId);
                   } else {
                     setPromoError(result.message);
                   }

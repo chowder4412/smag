@@ -3,23 +3,23 @@
 <plist version="1.0">
 <dict>
 	<key>CLIENT_ID</key>
-	<string>96147639067-8gd1vppugrrntor6fdlk5l1hhr30sc13.apps.googleusercontent.com</string>
+	<string>000000000000-dummyiosclient.apps.googleusercontent.com</string>
 	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.96147639067-8gd1vppugrrntor6fdlk5l1hhr30sc13</string>
+	<string>com.googleusercontent.apps.000000000000-dummyiosclient</string>
 	<key>ANDROID_CLIENT_ID</key>
-	<string>96147639067-ilg4u6a1pad5gq99tm10j8ij98te0s5q.apps.googleusercontent.com</string>
+	<string>000000000000-dummyandroidclient.apps.googleusercontent.com</string>
 	<key>API_KEY</key>
-	<string>AIzaSyBTNJmmLZvVBC30TTLPqXx5YRnN00AA1qs</string>
+	<string>AIzaSyDummyKey_ReplaceWithYourFirebaseIosKey</string>
 	<key>GCM_SENDER_ID</key>
-	<string>96147639067</string>
+	<string>000000000000</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.smag.mobile</string>
 	<key>PROJECT_ID</key>
-	<string>smag-12fe9</string>
+	<string>smag-example</string>
 	<key>STORAGE_BUCKET</key>
-	<string>smag-12fe9.firebasestorage.app</string>
+	<string>smag-example.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -31,6 +31,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:96147639067:ios:70e571711859505e6ca1be</string>
+	<string>1:000000000000:ios:0000000000000000000000</string>
 </dict>
 </plist>
