@@ -1,36 +1,62 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   getSessionTimeoutMinutes,
+  getUserAuthProviderInfo,
   isSessionLocked,
   lockSession,
+  setPasswordAndUnlockSession,
   setSessionTimeoutMinutes,
   signOutAndExitSession,
   subscribeSessionLock,
   unlockSessionWithBiometrics,
+  unlockSessionWithGoogle,
   unlockSessionWithPassword
 } from "@/lib/sessionSecurity";
 
 const mockReauthenticateWithCredential = jest.fn();
 const mockFirebaseSignOut = jest.fn();
+const mockFirebaseSetAccountPassword = jest.fn();
 const mockAuthenticateWithBiometrics = jest.fn();
 const mockIsBiometricAvailable = jest.fn();
 const mockIsBiometricEnabled = jest.fn();
+
+let mockCurrentUser: {
+  uid: string;
+  email: string;
+  displayName: string;
+  providerData: Array<{ providerId: string }>;
+} = {
+  uid: "test-user-123",
+  email: "chef@smag.com",
+  displayName: "Chef Pierre",
+  providerData: [{ providerId: "password" }]
+};
 
 jest.mock("firebase/auth", () => ({
   EmailAuthProvider: {
     credential: jest.fn((email, password) => ({ email, password }))
   },
+  GoogleAuthProvider: {
+    credential: jest.fn((token) => ({ token }))
+  },
   reauthenticateWithCredential: (...args: unknown[]) => mockReauthenticateWithCredential(...args)
 }));
 
 jest.mock("@/lib/firebase/auth", () => ({
-  auth: {
-    currentUser: {
-      uid: "test-user-123",
-      email: "chef@smag.com",
-      displayName: "Chef Pierre"
-    }
+  get auth() {
+    return { currentUser: mockCurrentUser };
   },
+  getUserAuthProviderInfo: () => {
+    const providers = (mockCurrentUser?.providerData || []).map((p) => p.providerId);
+    const hasGoogle = providers.includes("google.com");
+    const hasApple = providers.includes("apple.com");
+    const hasPassword = providers.length > 0 ? providers.includes("password") : !hasGoogle;
+    let primaryProvider: "password" | "google" | "apple" | "other" = "password";
+    if (!hasPassword && hasGoogle) primaryProvider = "google";
+    else if (!hasPassword && hasApple) primaryProvider = "apple";
+    return { hasPassword, hasGoogle, hasApple, primaryProvider };
+  },
+  firebaseSetAccountPassword: (...args: unknown[]) => mockFirebaseSetAccountPassword(...args),
   firebaseSignOut: () => mockFirebaseSignOut()
 }));
 
@@ -48,6 +74,13 @@ describe("sessionSecurity", () => {
     mockAuthenticateWithBiometrics.mockReset();
     mockIsBiometricAvailable.mockReset();
     mockIsBiometricEnabled.mockReset();
+    mockFirebaseSetAccountPassword.mockReset();
+    mockCurrentUser = {
+      uid: "test-user-123",
+      email: "chef@smag.com",
+      displayName: "Chef Pierre",
+      providerData: [{ providerId: "password" }]
+    };
   });
 
   it("manages session timeout preferences", async () => {
@@ -95,6 +128,43 @@ describe("sessionSecurity", () => {
 
     const result = await unlockSessionWithBiometrics();
     expect(result.success).toBe(true);
+    expect(isSessionLocked()).toBe(false);
+  });
+
+  it("identifies Google OAuth account without password and guides user", async () => {
+    mockCurrentUser = {
+      uid: "google-user-456",
+      email: "google@smag.com",
+      displayName: "Google Gourmet",
+      providerData: [{ providerId: "google.com" }]
+    };
+
+    const authInfo = getUserAuthProviderInfo();
+    expect(authInfo.hasGoogle).toBe(true);
+    expect(authInfo.hasPassword).toBe(false);
+    expect(authInfo.primaryProvider).toBe("google");
+
+    await lockSession();
+    const result = await unlockSessionWithPassword("anyPassword");
+    expect(result.success).toBe(false);
+    expect(result.message).toContain("Google");
+  });
+
+  it("unlocks session with setPasswordAndUnlockSession for Google users", async () => {
+    mockCurrentUser = {
+      uid: "google-user-456",
+      email: "google@smag.com",
+      displayName: "Google Gourmet",
+      providerData: [{ providerId: "google.com" }]
+    };
+
+    await lockSession();
+    expect(isSessionLocked()).toBe(true);
+
+    mockFirebaseSetAccountPassword.mockResolvedValue(undefined);
+    const result = await setPasswordAndUnlockSession("newSecurePass123!");
+    expect(result.success).toBe(true);
+    expect(mockFirebaseSetAccountPassword).toHaveBeenCalledWith("newSecurePass123!");
     expect(isSessionLocked()).toBe(false);
   });
 

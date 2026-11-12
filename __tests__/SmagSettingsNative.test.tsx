@@ -28,6 +28,12 @@ jest.mock("@/lib/userProfile", () => ({
 
 jest.mock("@/lib/firebase/auth", () => ({
   auth: { currentUser: { email: "alex@smag.com" } },
+  getUserAuthProviderInfo: () => ({
+    hasPassword: true,
+    hasGoogle: false,
+    hasApple: false,
+    primaryProvider: "password"
+  }),
   firebaseSignOut: jest.fn()
 }));
 

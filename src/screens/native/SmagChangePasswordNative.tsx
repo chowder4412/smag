@@ -13,7 +13,13 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppImage } from "@/components/AppImage";
 import { useAppRouter } from "@/lib/useAppRouter";
-import { firebaseUpdatePassword, getCurrentUser, getFirebaseAuthErrorMessage } from "@/lib/firebase/auth";
+import {
+  firebaseSetAccountPassword,
+  firebaseUpdatePassword,
+  getCurrentUser,
+  getFirebaseAuthErrorMessage,
+  getUserAuthProviderInfo
+} from "@/lib/firebase/auth";
 import { validatePassword } from "@/lib/validation";
 import { checkRateLimit, recordRateLimitAttempt } from "@/lib/rateLimiter";
 
@@ -31,10 +37,13 @@ export function SmagChangePasswordNative() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const authInfo = getUserAuthProviderInfo();
+  const hasExistingPassword = authInfo.hasPassword;
+
   async function handleUpdatePassword() {
     setError(null);
     const passwordError = validatePassword(nextPass);
-    if (!current) {
+    if (hasExistingPassword && !current) {
       setError("Enter your current password.");
       return;
     }
@@ -46,7 +55,7 @@ export function SmagChangePasswordNative() {
       setError("New password and confirmation do not match.");
       return;
     }
-    if (current === nextPass) {
+    if (hasExistingPassword && current === nextPass) {
       setError("Choose a new password that is different from your current password.");
       return;
     }
@@ -61,11 +70,19 @@ export function SmagChangePasswordNative() {
 
     setSaving(true);
     try {
-      await firebaseUpdatePassword(current, nextPass);
+      if (hasExistingPassword) {
+        await firebaseUpdatePassword(current, nextPass);
+      } else {
+        await firebaseSetAccountPassword(nextPass);
+      }
       await recordRateLimitAttempt("change_password", rateIdentifier, true);
-      Alert.alert("Password updated", "Your password has been changed successfully.", [
-        { text: "OK", onPress: () => router.replace("/smag_settings") }
-      ]);
+      Alert.alert(
+        hasExistingPassword ? "Password Updated" : "Password Set",
+        hasExistingPassword
+          ? "Your password has been changed successfully."
+          : "Your account password has been set. You can now use either Google or your password to sign in and unlock your session.",
+        [{ text: "OK", onPress: () => router.replace("/smag_settings") }]
+      );
     } catch (err) {
       const postStatus = await recordRateLimitAttempt("change_password", rateIdentifier, false);
       if (!postStatus.allowed || postStatus.isLocked) {
@@ -86,7 +103,9 @@ export function SmagChangePasswordNative() {
             <Pressable onPress={() => router.back()}>
               <MaterialIcons name="arrow-back" size={22} color="#a33800" />
             </Pressable>
-            <Text style={styles.title}>Change Password</Text>
+            <Text style={styles.title}>
+              {hasExistingPassword ? "Change Password" : "Set Account Password"}
+            </Text>
           </View>
         </View>
 
@@ -95,13 +114,23 @@ export function SmagChangePasswordNative() {
           <View style={styles.heroFade} />
         </View>
 
-        <Field
-          label="Current Password"
-          value={current}
-          onChangeText={setCurrent}
-          secureTextEntry={!showCurrent}
-          onToggle={() => setShowCurrent((v) => !v)}
-        />
+        {!hasExistingPassword ? (
+          <View style={styles.oauthNoticeBox}>
+            <MaterialIcons name="account-circle" size={20} color="#a33800" />
+            <Text style={styles.oauthNoticeText}>
+              You signed in with Google. Set an account password below to allow email and password sign-in and session unlocking anytime.
+            </Text>
+          </View>
+        ) : (
+          <Field
+            label="Current Password"
+            value={current}
+            onChangeText={setCurrent}
+            secureTextEntry={!showCurrent}
+            onToggle={() => setShowCurrent((v) => !v)}
+          />
+        )}
+
         <Field
           label="New Password"
           value={nextPass}
@@ -126,13 +155,24 @@ export function SmagChangePasswordNative() {
         </View>
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <Pressable style={[styles.updateBtn, saving && { opacity: 0.6 }]} onPress={handleUpdatePassword} disabled={saving}>
+        <Pressable
+          style={[styles.updateBtn, saving && { opacity: 0.6 }]}
+          onPress={handleUpdatePassword}
+          disabled={saving}
+          testID="change-password-submit-btn"
+        >
           {saving ? (
             <ActivityIndicator color="#ffefeb" />
           ) : (
             <>
-              <Text style={styles.updateText}>Update Password</Text>
-              <MaterialIcons name="lock-reset" size={18} color="#ffefeb" />
+              <Text style={styles.updateText}>
+                {hasExistingPassword ? "Update Password" : "Set Password"}
+              </Text>
+              <MaterialIcons
+                name={hasExistingPassword ? "lock-reset" : "vpn-key"}
+                size={18}
+                color="#ffefeb"
+              />
             </>
           )}
         </Pressable>
@@ -205,6 +245,24 @@ const styles = StyleSheet.create({
     gap: 8
   },
   infoText: { flex: 1, color: "#805032", fontSize: 12, lineHeight: 17 },
+  oauthNoticeBox: {
+    borderRadius: 16,
+    backgroundColor: "#fff0e6",
+    borderWidth: 1,
+    borderColor: "#ffdbc9",
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 4
+  },
+  oauthNoticeText: {
+    flex: 1,
+    color: "#805032",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600"
+  },
   errorText: { color: "#b31b25", fontSize: 13, fontWeight: "700", textAlign: "center" },
   updateBtn: {
     marginTop: 4,

@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 
-import { auth, firebaseSignOut } from "@/lib/firebase/auth";
+import { auth, firebaseSignOut, getUserAuthProviderInfo } from "@/lib/firebase/auth";
 import { clearOnboardingPending } from "@/lib/startupState";
 import { getUserProfile, resetUserProfile, subscribeUserProfile, type UserProfile } from "@/lib/userProfile";
 import { getSessionTimeoutMinutes, setSessionTimeoutMinutes } from "@/lib/sessionSecurity";
@@ -152,7 +152,8 @@ export function SmagSettingsNative() {
           />
           <NavRow
             icon="security"
-            label="Change Password"
+            label={getUserAuthProviderInfo().hasPassword ? "Change Password" : "Set Account Password"}
+            sub={getUserAuthProviderInfo().hasPassword ? undefined : "Signed in with Google"}
             onPress={() => router.push("/smag_change_password")}
             testID="settings-change-password-row"
           />

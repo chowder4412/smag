@@ -7,6 +7,7 @@ import {
   getReactNativePersistence,
   GoogleAuthProvider,
   initializeAuth,
+  linkWithCredential,
   OAuthProvider,
   onAuthStateChanged,
   PhoneAuthProvider,
@@ -225,6 +226,44 @@ export async function firebaseUpdatePassword(currentPassword: string, nextPasswo
   const credential = EmailAuthProvider.credential(user.email, currentPassword);
   await reauthenticateWithCredential(user, credential);
   await updatePassword(user, nextPassword);
+}
+
+export function getUserAuthProviderInfo(): {
+  hasPassword: boolean;
+  hasGoogle: boolean;
+  hasApple: boolean;
+  primaryProvider: "password" | "google" | "apple" | "other";
+} {
+  const user = auth.currentUser;
+  if (!user) {
+    return { hasPassword: false, hasGoogle: false, hasApple: false, primaryProvider: "other" };
+  }
+  const providers = (user.providerData || []).map((p) => p.providerId);
+  const hasPassword = providers.includes("password");
+  const hasGoogle = providers.includes("google.com");
+  const hasApple = providers.includes("apple.com");
+  let primaryProvider: "password" | "google" | "apple" | "other" = "password";
+  if (!hasPassword && hasGoogle) primaryProvider = "google";
+  else if (!hasPassword && hasApple) primaryProvider = "apple";
+  return { hasPassword, hasGoogle, hasApple, primaryProvider };
+}
+
+export async function firebaseSetAccountPassword(newPassword: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.email) {
+    throw new Error("No active user session found.");
+  }
+  const credential = EmailAuthProvider.credential(user.email, newPassword);
+  try {
+    await linkWithCredential(user, credential);
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code;
+    if (code === "auth/provider-already-linked") {
+      await updatePassword(user, newPassword);
+    } else {
+      throw err;
+    }
+  }
 }
 
 export async function firebaseSignOut(): Promise<void> {
