@@ -15,10 +15,19 @@
         "action": "VIEW",
         "autoVerify": true,
         "data": [
-          { "scheme": "https", "host": "smag.ng", "pathPrefix": "/" },
-          { "scheme": "smag" }
+          {
+            "scheme": "https",
+            "host": "smag.ng",
+            "pathPrefix": "/"
+          },
+          {
+            "scheme": "smag"
+          }
         ],
-        "category": ["BROWSABLE", "DEFAULT"]
+        "category": [
+          "BROWSABLE",
+          "DEFAULT"
+        ]
       }
     ],
     "ios": {
@@ -34,6 +43,9 @@
             ]
           }
         ]
+      },
+      "runtimeVersion": {
+        "policy": "appVersion"
       }
     },
     "android": {
@@ -46,8 +58,11 @@
       },
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.ACCESS_COARSE_LOCATION"
-      ]
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ],
+      "runtimeVersion": "1.0.0"
     },
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -99,6 +114,9 @@
       "eas": {
         "projectId": "5fd47950-a064-49b7-b378-1dfed20d9aec"
       }
+    },
+    "updates": {
+      "url": "https://u.expo.dev/5fd47950-a064-49b7-b378-1dfed20d9aec"
     }
   }
 }
